@@ -6,10 +6,11 @@ import bluetooth
 from machine import Pin, I2C, SoftI2C, ADC
 
 import aioble
+import aioble.core
+import aioble.device
+import aioble.security
 from mpu9250 import MPU9250
 from sh1106 import SH1106_I2C
-
-PASSKEY = 123456
 
 
 class MPU:
@@ -55,6 +56,7 @@ class MPU:
         yaw = atan2(-by, bx)
         return degrees(pitch), degrees(roll), degrees(yaw)
 
+
 class OLED:
     """OLED display with SH1106 chip communication"""
     def __init__(self):
@@ -65,6 +67,12 @@ class OLED:
         self._OLED_ADDR = 0x3C
         self.i2c = None
         self.oled = None
+        self.valve_states = {
+            0: "closed",
+            1: "open",
+            2: "closing",
+            3: "opening"
+        }
 
     def configure(self):
         try:
@@ -79,12 +87,12 @@ class OLED:
             print("Error: OLED not found")
             return None
 
-    def print_tank_info(self, level_gray, level_clean, valve):
+    def print_tank_info(self, level_gray, level_clean, valve_state):
         if not self.oled: return
         self.oled.fill(0)
         self.oled.text(f"|GRAY TANK>", 0, 0)
         self.oled.text(f" lvl: {level_gray:.1f}% ", 0, 15)
-        self.oled.text(f" valve: {'open' if valve else 'closed'}", 0, 25)
+        self.oled.text(f" valve: {self.valve_states[valve_state]}", 0, 25)
         self.oled.text(f"|CLEAN TANK>", 0, 40)
         self.oled.text(f" lvl: {level_clean:.1f}%", 0, 55)
         self.oled.show()
@@ -97,6 +105,7 @@ class OLED:
         self.oled.text(f" roll: {roll:.1f}", 0, 30)
         self.oled.text(f" yaw: {yaw:.1f}", 0, 45)
         self.oled.show()
+
 
 class GrayLevelSensor:
     """Gray water tank level sensor"""
@@ -116,6 +125,7 @@ class GrayLevelSensor:
     def get_level(self):
         return int((self.adc.read() / self._MAX_ADC) * self._MAX_LVL)
 
+
 class CleanLevelSensor:
     """Clean water tank level sensor"""
     def __init__(self):
@@ -129,10 +139,12 @@ class CleanLevelSensor:
             self.adc = ADC(self._LVL_SENSOR_PIN)
             self.adc.atten(ADC.ATTN_11DB)
             return self.adc
-        except OSError: return None
+        except OSError:
+            return None
 
     def get_level(self):
         return int((self.adc.read() / self._MAX_ADC) * self._MAX_LVL)
+
 
 class TemperatureSensor:
     """Gray water tank temperature sensor NTC10k"""
@@ -152,7 +164,8 @@ class TemperatureSensor:
             self.adc = ADC(self._TEMP_SENSOR_PIN)
             self.adc.atten(ADC.ATTN_11DB)
             return self.adc
-        except OSError: return None
+        except OSError:
+            return None
 
     def get_temperature(self):
         Vntc = max((self.adc.read() * self._MAX_V) / self._MAX_ADC, 1e-10)
@@ -171,7 +184,7 @@ class Valve:
         self._OPEN_PIN = Pin(5, Pin.OUT)
         self._CLOSE_PIN = Pin(16, Pin.OUT)
 
-        self._STATE = 0
+        self._STATE = 0 # 0-closed, 1-open, 2-closing, 3-opening
         self._move_task = None
         self._auto_close_task = None
 
@@ -193,12 +206,16 @@ class Valve:
 
             if state == 1:
                 self._OPEN_PIN.value(1)
+                self._STATE = 3
                 print("Valve OPENING")
+                await asyncio.sleep(self.MOVE_TIME_SEC)
+                self._STATE = 1
             else:
                 self._CLOSE_PIN.value(1)
+                self._STATE = 2
                 print("Valve CLOSING")
-
-            await asyncio.sleep(self.MOVE_TIME_SEC)
+                await asyncio.sleep(self.MOVE_TIME_SEC)
+                self._STATE = 0
 
         except asyncio.CancelledError:
             print("Valve movement cancelled")
@@ -213,7 +230,7 @@ class Valve:
         try:
             await asyncio.sleep(self.AUTO_CLOSE_SEC)
 
-            if self._STATE == 1:
+            if self._STATE in (1, 3):
                 print("Auto-closing valve after timeout")
                 await self._start_valve_task(0)
 
@@ -235,8 +252,6 @@ class Valve:
             self._auto_close_task.cancel()
             self._auto_close_task = None
 
-        self._STATE = state
-
         # Start valve movement
         self._move_task = asyncio.create_task(self._run_valve(state))
 
@@ -247,14 +262,14 @@ class Valve:
     async def control(self, ble):
         while True:
             try:
-                # Physical button forces OPEN
+                # Physical button pressed
                 if self.is_button_pressed():
-                    print("Physical button pressed. Forcing valve OPEN.")
-
-                    await self._start_valve_task(1)
-                    await ble.write_characteristic("VALVE", self.get_state(), '<B')
-
+                    print("Physical button pressed.")
+                    new_state = 0 if self.get_state() in (1, 3) else 1
+                    print(f"Button press initiated the valve movement: {new_state}")
+                    await self._start_valve_task(new_state)
                     await ble.write_characteristic("VALVE_LOCKED", 1, '<B')
+                    await ble.write_characteristic("VALVE", new_state, '<B')
 
                     while self.is_button_pressed():
                         await asyncio.sleep_ms(50)
@@ -264,14 +279,20 @@ class Valve:
                     continue
 
                 try:
-                    _, data = await asyncio.wait_for_ms(ble.characteristics["VALVE"].written(), 50)
+                    connection, data = await ble.characteristics["VALVE"].written(timeout_ms=200)
                     command = ble.decode_data(data)
 
-                    if command is not None and command != self.get_state():
+                    # App switch state changed
+                    if command is not None:
                         print(f"App command received: {command}")
-                        await self._start_valve_task(command)
+                        s = self.get_state()
+                        if (command == 0 and s in (1, 3)) or (command == 1 and s in (0, 2)):
+                            print(f"App command initiated the valve movement: {command}")
+                            await self._start_valve_task(command)
 
-                except asyncio.TimeoutError:
+                        # Confirms to the app that the command was accepted
+                        await ble.write_characteristic("VALVE", command, '<B')
+                except Exception as e:
                     pass
 
             except asyncio.CancelledError:
@@ -290,6 +311,7 @@ class Valve:
             except Exception as e:
                 print("Error in valve control task:", e)
                 await asyncio.sleep_ms(200)
+
 
 class Heater:
     def __init__(self):
@@ -333,10 +355,41 @@ class Heater:
             finally:
                 await asyncio.sleep(5)
 
+
+class Buzzer:
+    def __init__(self):
+        self._BUZZER_PIN = Pin(17, Pin.OUT)
+        self._DISABLE_BTN = Pin(14, Pin.OUT)
+        self._LVL_THRESHOLD = 90
+        self._BUZZER_DISABLED = False
+
+    def configure(self):
+        self._BUZZER_PIN.value(0)
+        self._BUZZER_DISABLED = False
+
+    def is_button_pressed(self):
+        return self._DISABLE_BTN.value() == 1
+
+    def control(self, valve_state, gray_lvl):
+        if valve_state == 0 and gray_lvl > self._LVL_THRESHOLD:
+            if self.is_button_pressed():
+                self._BUZZER_DISABLED = not self._BUZZER_DISABLED
+
+            if not self._BUZZER_DISABLED:
+                self._BUZZER_PIN.value(1)
+            else:
+                self._BUZZER_PIN.value(0)
+
+        else:
+            self._BUZZER_PIN.value(0)
+            self._BUZZER_DISABLED = False
+
+
 class Bluetooth:
     def __init__(self):
         self._ADV_INTERVAL_MS = 250000
         self._BT_NAME = "Mati&Mati"
+        self._BT_PASSWORD = 123456
         self._MANAGER_SERVICE_UUID = bluetooth.UUID('19b10000-e8f2-537e-4f6c-d104768a1214')
         self.characteristic_uuids = {
             "CLEAN_LEVEL_SENSOR": bluetooth.UUID('00000000-0000-0000-0000-000000000001'),
@@ -350,31 +403,42 @@ class Bluetooth:
         self.characteristics = {}
 
     def configure(self):
-        aioble.security(
-            bonding=True,
-            mitm=True,
-            le_secure=True,
-            io_capability=aioble.IO_CAPABILITY_DISPLAY_ONLY,
-        )
-
-        def display_passkey(passkey):
-            print("BLE Passkey:", passkey)
-
-        aioble.set_passkey_callback(display_passkey)
-        aioble.set_static_passkey(PASSKEY)
-
+        aioble.config(gap_name=self._BT_NAME, bond=True, mitm=True, le_secure=True, io=0)
+        aioble.security.load_secrets()
         ble_service = aioble.Service(self._MANAGER_SERVICE_UUID)
+
+        _FLAG_READ_AUTHENTICATED = 0x0400
+        _FLAG_WRITE_AUTHENTICATED = 0x2000
+
         for name in self.characteristic_uuids:
             if name == "VALVE":
-                 self.characteristics[name] = aioble.Characteristic(
-                    ble_service, self.characteristic_uuids[name], read=True, write=True, capture=True, notify=True
+                self.characteristics[name] = aioble.Characteristic(
+                    ble_service, self.characteristic_uuids[name], read=True, write=True, capture=True, indicate=True
                 )
+                self.characteristics[name].flags |= (_FLAG_READ_AUTHENTICATED | _FLAG_WRITE_AUTHENTICATED)
+            elif name in ["VALVE_LOCKED", "HEATER"]:
+                self.characteristics[name] = aioble.Characteristic(
+                    ble_service, self.characteristic_uuids[name], read=True, indicate=True
+                )
+                self.characteristics[name].flags |= _FLAG_READ_AUTHENTICATED
             else:
                 self.characteristics[name] = aioble.Characteristic(
                     ble_service, self.characteristic_uuids[name], read=True, notify=True
                 )
+                self.characteristics[name].flags |= _FLAG_READ_AUTHENTICATED
+
         aioble.register_services(ble_service)
-        print("BLE Service Registered")
+        aioble.core.register_irq_handler(self._security_handler, None)
+        print("BLE Service Registered and Advertising")
+
+    def _security_handler(self, event, data):
+        if event == 31: # _IRQ_PASSKEY_ACTION
+            conn_handle, action, passkey = data
+            if action == 3: # _PASSKEY_ACTION_DISP
+                print(f"Displaying passkey: {self._BT_PASSWORD}")
+                bluetooth.BLE().gap_passkey(conn_handle, action, self._BT_PASSWORD)
+                return True
+        return None
 
     @staticmethod
     def decode_data(data):
@@ -387,11 +451,29 @@ class Bluetooth:
 
     async def write_characteristic(self, name, data, fmt):
         encoded_data = struct.pack(fmt, data)
-        self.characteristics[name].write(encoded_data, send_update=True)
+        # Update local value but do not broadcast to all
+        self.characteristics[name].write(encoded_data, send_update=False)
+        
+        # Manually notify/indicate only authenticated connections
+        for conn in aioble.device.DeviceConnection._connected.values():
+            if conn.authenticated:
+                if name in ["VALVE", "VALVE_LOCKED", "HEATER"]:
+                    try:
+                        await self.characteristics[name].indicate(conn, encoded_data)
+                    except Exception as e:
+                        print(f"Indicate failed for {name}: {e}")
+                else:
+                    self.characteristics[name].notify(conn, encoded_data)
 
     async def write_characteristic_multiple(self, name, data_tuple, fmt):
         encoded_data = struct.pack(fmt, *data_tuple)
-        self.characteristics[name].write(encoded_data, send_update=True)
+        # Update local value but do not broadcast to all
+        self.characteristics[name].write(encoded_data, send_update=False)
+        
+        # Manually notify only authenticated connections
+        for conn in aioble.device.DeviceConnection._connected.values():
+            if conn.authenticated:
+                self.characteristics[name].notify(conn, encoded_data)
 
     async def advertise(self):
         print("Starting BLE advertising...")
@@ -403,6 +485,17 @@ class Bluetooth:
                         services=[self._MANAGER_SERVICE_UUID]
                 ) as connection:
                     print("Connection from", connection.device)
+                    
+                    if not connection.authenticated:
+                        try:
+                            print("Requesting pairing...")
+                            await connection.pair(bond=True, mitm=True, le_secure=True, io=0)
+                            print("Pairing complete")
+                        except Exception as e:
+                            print(f"Pairing failed: {e}")
+                            await connection.disconnect()
+                            continue
+
                     await self.write_characteristic("VALVE", valve.get_state(), '<B')
                     await self.write_characteristic("VALVE_LOCKED", 1 if valve.is_button_pressed() else 0, '<B')
                     await self.write_characteristic("HEATER", heater.get_state(), '<B')
@@ -479,3 +572,6 @@ except KeyboardInterrupt:
     print("Program stopped by user")
 except Exception as e:
     print(f"An unexpected error occurred in main run: {e}")
+finally:
+    aioble.stop()
+    print("BLE stopped")

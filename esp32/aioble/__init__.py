@@ -12,11 +12,6 @@ except:
     log_info("Peripheral support disabled")
 
 try:
-    from .central import scan
-except:
-    log_info("Central support disabled")
-
-try:
     from .server import (
         Service,
         Characteristic,
@@ -26,6 +21,12 @@ try:
     )
 except:
     log_info("GATT server support disabled")
+
+
+try:
+    from .security import *  # Import all functions from the security module
+except ImportError:
+    log_warn("Security module import failed or is disabled")
 
 
 ADDR_PUBLIC = const(0)
