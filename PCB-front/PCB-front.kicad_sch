@@ -2,7 +2,7 @@
 	(version 20250114)
 	(generator "eeschema")
 	(generator_version "9.0")
-	(uuid "2dc4e176-a9fb-4561-b284-9e4c6852c1de")
+	(uuid "0705f0b8-6486-48b6-9d6b-cbe24fbbf180")
 	(paper "A4")
 	(title_block
 		(title "Tank Manager - front panel")
@@ -384,28 +384,24 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "Switch:SW_Push"
-			(pin_numbers
-				(hide yes)
-			)
+		(symbol "Device:RotaryEncoder_Switch"
 			(pin_names
-				(offset 1.016)
+				(offset 0.254)
 				(hide yes)
 			)
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
 			(property "Reference" "SW"
-				(at 1.27 2.54 0)
+				(at 0 6.604 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify left)
 				)
 			)
-			(property "Value" "SW_Push"
-				(at 0 -1.524 0)
+			(property "Value" "RotaryEncoder_Switch"
+				(at 0 -6.604 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -413,7 +409,7 @@
 				)
 			)
 			(property "Footprint" ""
-				(at 0 5.08 0)
+				(at -3.81 4.064 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -422,7 +418,7 @@
 				)
 			)
 			(property "Datasheet" "~"
-				(at 0 5.08 0)
+				(at 0 6.604 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -430,7 +426,7 @@
 					(hide yes)
 				)
 			)
-			(property "Description" "Push button switch, generic, two pins"
+			(property "Description" "Rotary encoder, dual channel, incremental quadrate outputs, with switch"
 				(at 0 0 0)
 				(effects
 					(font
@@ -439,7 +435,7 @@
 					(hide yes)
 				)
 			)
-			(property "ki_keywords" "switch normally-open pushbutton push-button"
+			(property "ki_keywords" "rotary switch encoder switch push button"
 				(at 0 0 0)
 				(effects
 					(font
@@ -448,10 +444,31 @@
 					(hide yes)
 				)
 			)
-			(symbol "SW_Push_0_1"
-				(circle
-					(center -2.032 0)
-					(radius 0.508)
+			(property "ki_fp_filters" "RotaryEncoder*Switch*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "RotaryEncoder_Switch_0_1"
+				(rectangle
+					(start -5.08 5.08)
+					(end 5.08 -5.08)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+				(polyline
+					(pts
+						(xy -5.08 2.54) (xy -3.81 2.54) (xy -3.81 2.032)
+					)
 					(stroke
 						(width 0)
 						(type default)
@@ -462,19 +479,8 @@
 				)
 				(polyline
 					(pts
-						(xy 0 1.27) (xy 0 3.048)
+						(xy -5.08 0) (xy -3.81 0) (xy -3.81 -1.016) (xy -3.302 -2.032)
 					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(circle
-					(center 2.032 0)
-					(radius 0.508)
 					(stroke
 						(width 0)
 						(type default)
@@ -485,7 +491,7 @@
 				)
 				(polyline
 					(pts
-						(xy 2.54 1.27) (xy -2.54 1.27)
+						(xy -5.08 -2.54) (xy -3.81 -2.54) (xy -3.81 -2.032)
 					)
 					(stroke
 						(width 0)
@@ -495,17 +501,195 @@
 						(type none)
 					)
 				)
+				(polyline
+					(pts
+						(xy -4.318 0) (xy -3.81 0) (xy -3.81 1.016) (xy -3.302 2.032)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(circle
+					(center -3.81 0)
+					(radius 0.254)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type outline)
+					)
+				)
+				(polyline
+					(pts
+						(xy -0.635 -1.778) (xy -0.635 1.778)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(circle
+					(center -0.381 0)
+					(radius 1.905)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -0.381 -1.778) (xy -0.381 1.778)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(arc
+					(start -0.381 -2.794)
+					(mid -3.0988 -0.0635)
+					(end -0.381 2.667)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -0.127 1.778) (xy -0.127 -1.778)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0.254 2.921) (xy -0.508 2.667) (xy 0.127 2.286)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0.254 -3.048) (xy -0.508 -2.794) (xy 0.127 -2.413)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 3.81 1.016) (xy 3.81 -1.016)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 3.81 0) (xy 3.429 0)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(circle
+					(center 4.318 1.016)
+					(radius 0.127)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(circle
+					(center 4.318 -1.016)
+					(radius 0.127)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 5.08 2.54) (xy 4.318 2.54) (xy 4.318 1.016)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 5.08 -2.54) (xy 4.318 -2.54) (xy 4.318 -1.016)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "RotaryEncoder_Switch_1_1"
 				(pin passive line
-					(at -5.08 0 0)
+					(at -7.62 2.54 0)
 					(length 2.54)
-					(name "1"
+					(name "A"
 						(effects
 							(font
 								(size 1.27 1.27)
 							)
 						)
 					)
-					(number "1"
+					(number "A"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -514,16 +698,70 @@
 					)
 				)
 				(pin passive line
-					(at 5.08 0 180)
+					(at -7.62 0 0)
 					(length 2.54)
-					(name "2"
+					(name "C"
 						(effects
 							(font
 								(size 1.27 1.27)
 							)
 						)
 					)
-					(number "2"
+					(number "C"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -7.62 -2.54 0)
+					(length 2.54)
+					(name "B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "B"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 7.62 2.54 180)
+					(length 2.54)
+					(name "S1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "S1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 7.62 -2.54 180)
+					(length 2.54)
+					(name "S2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "S2"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -534,7 +772,7 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "Connector:Conn_01x07_Pin"
+		(symbol "Connector:Conn_01x09_Pin"
 			(pin_names
 				(offset 1.016)
 				(hide yes)
@@ -543,15 +781,15 @@
 			(in_bom yes)
 			(on_board yes)
 			(property "Reference" "J"
-				(at 0 10.16 0)
+				(at 0 12.7 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
 				)
 			)
-			(property "Value" "Conn_01x07_Pin"
-				(at 0 -10.16 0)
+			(property "Value" "Conn_01x09_Pin"
+				(at 0 -12.7 0)
 				(effects
 					(font
 						(size 1.27 1.27)
@@ -576,7 +814,7 @@
 					(hide yes)
 				)
 			)
-			(property "Description" "Generic connector, single row, 01x07, script generated"
+			(property "Description" "Generic connector, single row, 01x09, script generated"
 				(at 0 0 0)
 				(effects
 					(font
@@ -611,7 +849,18 @@
 					(hide yes)
 				)
 			)
-			(symbol "Conn_01x07_Pin_1_1"
+			(symbol "Conn_01x09_Pin_1_1"
+				(rectangle
+					(start 0.8636 10.287)
+					(end 0 10.033)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type outline)
+					)
+				)
 				(rectangle
 					(start 0.8636 7.747)
 					(end 0 7.493)
@@ -687,6 +936,29 @@
 					)
 					(fill
 						(type outline)
+					)
+				)
+				(rectangle
+					(start 0.8636 -10.033)
+					(end 0 -10.287)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type outline)
+					)
+				)
+				(polyline
+					(pts
+						(xy 1.27 10.16) (xy 0.8636 10.16)
+					)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
 					)
 				)
 				(polyline
@@ -773,8 +1045,20 @@
 						(type none)
 					)
 				)
+				(polyline
+					(pts
+						(xy 1.27 -10.16) (xy 0.8636 -10.16)
+					)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
 				(pin passive line
-					(at 5.08 7.62 180)
+					(at 5.08 10.16 180)
 					(length 3.81)
 					(name "Pin_1"
 						(effects
@@ -792,7 +1076,7 @@
 					)
 				)
 				(pin passive line
-					(at 5.08 5.08 180)
+					(at 5.08 7.62 180)
 					(length 3.81)
 					(name "Pin_2"
 						(effects
@@ -810,7 +1094,7 @@
 					)
 				)
 				(pin passive line
-					(at 5.08 2.54 180)
+					(at 5.08 5.08 180)
 					(length 3.81)
 					(name "Pin_3"
 						(effects
@@ -828,7 +1112,7 @@
 					)
 				)
 				(pin passive line
-					(at 5.08 0 180)
+					(at 5.08 2.54 180)
 					(length 3.81)
 					(name "Pin_4"
 						(effects
@@ -846,7 +1130,7 @@
 					)
 				)
 				(pin passive line
-					(at 5.08 -2.54 180)
+					(at 5.08 0 180)
 					(length 3.81)
 					(name "Pin_5"
 						(effects
@@ -864,7 +1148,7 @@
 					)
 				)
 				(pin passive line
-					(at 5.08 -5.08 180)
+					(at 5.08 -2.54 180)
 					(length 3.81)
 					(name "Pin_6"
 						(effects
@@ -882,7 +1166,7 @@
 					)
 				)
 				(pin passive line
-					(at 5.08 -7.62 180)
+					(at 5.08 -5.08 180)
 					(length 3.81)
 					(name "Pin_7"
 						(effects
@@ -892,6 +1176,42 @@
 						)
 					)
 					(number "7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 5.08 -7.62 180)
+					(length 3.81)
+					(name "Pin_8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 5.08 -10.16 180)
+					(length 3.81)
+					(name "Pin_9"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "9"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -911,7 +1231,7 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "aa4cc644-98bb-41f8-9899-9055de74ae1e")
+		(uuid "5bd89aea-7a3a-467d-8a5f-a89b155018e7")
 		(property "Reference" "U1"
 			(at 59.69 46.99 0)
 			(effects
@@ -956,20 +1276,20 @@
 			)
 		)
 		(pin "1"
-			(uuid "bb65f568-0cad-492e-9948-eaa677fa56a4")
+			(uuid "8014fa34-8375-4ade-9026-e7da228f5159")
 		)
 		(pin "2"
-			(uuid "f0650973-140c-4963-ac95-cf331b63b7e9")
+			(uuid "ebb99233-6e8c-48aa-bee6-6e8e7c2e65bb")
 		)
 		(pin "3"
-			(uuid "2a260bbf-96bd-4cba-bb5e-34bd6d617c7e")
+			(uuid "ade52e4f-7620-4be4-84bf-65b3d265008e")
 		)
 		(pin "4"
-			(uuid "47413f04-e3b3-4aed-b3ac-23fdf0ede4e8")
+			(uuid "06383fdc-1397-4f94-8ee2-2d942cbb4420")
 		)
 		(instances
 			(project "PCB-front"
-				(path "/2dc4e176-a9fb-4561-b284-9e4c6852c1de"
+				(path "/0705f0b8-6486-48b6-9d6b-cbe24fbbf180"
 					(reference "U1")
 					(unit 1)
 				)
@@ -985,7 +1305,7 @@
 			)
 			(justify right)
 		)
-		(uuid "184ce245-b51d-4cb1-ae42-8ec6a64ca5a5")
+		(uuid "37d78102-e03a-41b1-9dc2-fa3f808944f8")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 57.15 60.96 0)
 			(effects
@@ -1006,7 +1326,7 @@
 			)
 			(justify right)
 		)
-		(uuid "9b45aab6-8530-4aa9-a179-2b32b64857cb")
+		(uuid "9732e269-404d-4761-9fcb-47cced4462e6")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 57.15 63.5 0)
 			(effects
@@ -1027,7 +1347,7 @@
 			)
 			(justify left)
 		)
-		(uuid "1f65c2bd-931b-4bd4-8367-bdf51864cdc3")
+		(uuid "dc3164f6-f454-423d-a7d2-1a74b10f2152")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 72.39 60.96 0)
 			(effects
@@ -1048,7 +1368,7 @@
 			)
 			(justify left)
 		)
-		(uuid "2d43a322-3ee4-49d5-9e8d-850ea948f782")
+		(uuid "8203de66-4ddf-4c7a-9334-9bfaa61eb7f3")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 72.39 63.5 0)
 			(effects
@@ -1068,7 +1388,7 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "16f7d4fa-9ebe-460d-9815-3608d604335e")
+		(uuid "6c13279f-4701-497a-8233-76c12a68d790")
 		(property "Reference" "U2"
 			(at 129.54 46.99 0)
 			(effects
@@ -1113,38 +1433,38 @@
 			)
 		)
 		(pin "1"
-			(uuid "2a240525-77ba-4a24-916e-ea6ee21f9833")
+			(uuid "e0371b47-919b-47c4-99b9-7139e5c8b80d")
 		)
 		(pin "3"
-			(uuid "a89caa28-bf64-43ab-a93a-25ad62ec73ed")
+			(uuid "d4406783-eacc-49b8-bae6-120aa0b3e718")
 		)
 		(pin "4"
-			(uuid "1723018d-57e2-413e-905e-c9300709f02d")
+			(uuid "d945740d-335d-415b-8923-3164696f06a5")
 		)
 		(pin "5"
-			(uuid "98805ffa-e2d3-4452-8f4d-d3cda4f33a6e")
+			(uuid "5e5c8206-37ab-4b20-b422-47659f8af986")
 		)
 		(pin "6"
-			(uuid "84758806-791b-49b1-8dc6-156febbae7a0")
+			(uuid "f1062fc3-900b-49f2-8499-f3c358abe01a")
 		)
 		(pin "10"
-			(uuid "5355dd12-dcc8-4abd-8231-eb9d5be958ce")
+			(uuid "c588cb1a-4252-40cc-b487-a768aeadeef2")
 		)
 		(pin "9"
-			(uuid "03c3ebf9-1067-4111-bde3-537c8bcf8730")
+			(uuid "18103946-1c49-47d5-9dde-0830ea59befb")
 		)
 		(pin "8"
-			(uuid "60d25980-df1d-4f1b-84fb-166642ab0d0b")
+			(uuid "c58e8910-c684-475e-b18c-a2f80baecaa0")
 		)
 		(pin "7"
-			(uuid "c6873901-f86c-469a-a424-cffa9f1b96d8")
+			(uuid "4d920d06-ee1e-400f-a5ac-0aa9d9fd0908")
 		)
 		(pin "2"
-			(uuid "daa9eedc-61ea-44b1-b537-c507064b8433")
+			(uuid "764d5633-c723-49d9-a19b-4f381c652fe4")
 		)
 		(instances
 			(project "PCB-front"
-				(path "/2dc4e176-a9fb-4561-b284-9e4c6852c1de"
+				(path "/0705f0b8-6486-48b6-9d6b-cbe24fbbf180"
 					(reference "U2")
 					(unit 1)
 				)
@@ -1160,7 +1480,7 @@
 			)
 			(justify right)
 		)
-		(uuid "c1c7bc77-01e9-431c-bcd8-b09a6ef00adf")
+		(uuid "fdea976a-389e-4073-a569-f40f887dc79b")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 127 60.96 0)
 			(effects
@@ -1181,7 +1501,7 @@
 			)
 			(justify right)
 		)
-		(uuid "1c105334-9169-4c19-bc1f-b5a73407d389")
+		(uuid "444b3662-04e0-431d-9728-f2b57fccd934")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 127 63.5 0)
 			(effects
@@ -1202,7 +1522,7 @@
 			)
 			(justify right)
 		)
-		(uuid "2f0fabe1-ae17-4dc0-805e-97fb9109478d")
+		(uuid "0e678419-3301-4627-8c7b-277b7d6f6d41")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 127 66.04 0)
 			(effects
@@ -1216,27 +1536,27 @@
 	)
 	(no_connect
 		(at 127 68.58)
-		(uuid "0ba11376-9bd2-4972-b92e-1252ccaae758")
+		(uuid "a7c70fe2-6c40-46e5-b4de-106dcdee581e")
 	)
 	(no_connect
 		(at 127 71.12)
-		(uuid "7f7e9a7d-c807-40ba-81da-c914ec84b4fc")
+		(uuid "6f122147-51c3-4e20-9ed5-e68471b37fed")
 	)
 	(no_connect
 		(at 147.32 60.96)
-		(uuid "cd12ead6-a7c3-4348-a70b-b2b667a2d8e3")
+		(uuid "699a90c1-1b38-428e-8365-89e147a23d3c")
 	)
 	(no_connect
 		(at 147.32 63.5)
-		(uuid "49235adc-b836-4d5b-a9ce-ce0403407773")
+		(uuid "4da9b578-dbf1-40b5-bb9b-acbdb173011e")
 	)
 	(no_connect
 		(at 147.32 66.04)
-		(uuid "9e2ffdb7-3518-4051-8ba0-fac30b5db176")
+		(uuid "10b10b76-1161-4e22-bd73-4deff1bf3690")
 	)
 	(no_connect
 		(at 147.32 68.58)
-		(uuid "bbeb11c4-845f-4bdf-96a7-c5d8635eb760")
+		(uuid "c1dbf862-5ec4-43aa-a78e-c0d49dbee061")
 	)
 	(global_label "GND"
 		(shape bidirectional)
@@ -1247,7 +1567,7 @@
 			)
 			(justify left)
 		)
-		(uuid "e71aa8d9-4059-4a91-84b0-ca05f0894491")
+		(uuid "140ec9ca-3d99-4edc-9074-a34ed00437ae")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 147.32 71.12 0)
 			(effects
@@ -1260,15 +1580,15 @@
 		)
 	)
 	(symbol
-		(lib_id "Switch:SW_Push")
+		(lib_id "Device:RotaryEncoder_Switch")
 		(at 59.69 110.49 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "74bd37d6-4aa8-4cd1-abc7-5c0397ec2624")
-		(property "Reference" "SW1"
+		(uuid "b63eb732-96e4-42ed-ba4b-28745b8e2bc8")
+		(property "Reference" "ENC1"
 			(at 59.69 97.79 0)
 			(effects
 				(font
@@ -1276,7 +1596,7 @@
 				)
 			)
 		)
-		(property "Value" "Tact 12x12"
+		(property "Value" "EC12 24 imp."
 			(at 59.69 100.33 0)
 			(effects
 				(font
@@ -1284,7 +1604,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Button_Switch_THT:SW_PUSH-12mm"
+		(property "Footprint" "Rotary_Encoder:RotaryEncoder_Alps_EC12E-Switch_Vertical_H20mm"
 			(at 59.69 110.49 0)
 			(effects
 				(font
@@ -1311,33 +1631,42 @@
 				(hide yes)
 			)
 		)
-		(pin "1"
-			(uuid "87ba9e13-9721-4e24-bcb3-00922198a957")
+		(pin "A"
+			(uuid "f70fda10-ab54-4bd2-87c2-809a7a516339")
 		)
-		(pin "2"
-			(uuid "d02c2da1-2b72-468e-b9b9-9e71fd514bcf")
+		(pin "C"
+			(uuid "362c9d9a-8f01-4b71-9248-94c83aa51efc")
+		)
+		(pin "B"
+			(uuid "87d0ea50-417d-4270-a739-d5c6a66a23bf")
+		)
+		(pin "S1"
+			(uuid "a5ae44de-4e5d-4e7d-937e-a2e5cd3fa995")
+		)
+		(pin "S2"
+			(uuid "d19e1695-8a7e-47cf-ada7-f1438ea4b8e3")
 		)
 		(instances
 			(project "PCB-front"
-				(path "/2dc4e176-a9fb-4561-b284-9e4c6852c1de"
-					(reference "SW1")
+				(path "/0705f0b8-6486-48b6-9d6b-cbe24fbbf180"
+					(reference "ENC1")
 					(unit 1)
 				)
 			)
 		)
 	)
-	(global_label "+3.3V"
+	(global_label "ENC_A"
 		(shape bidirectional)
-		(at 54.61 110.49 180)
+		(at 52.07 107.95 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify right)
 		)
-		(uuid "4ce95f1e-9e26-4e3e-8f04-f0de854de6e5")
+		(uuid "58535edc-dca5-47cc-b4dc-42fd41d459f4")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 54.61 110.49 0)
+			(at 52.07 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1347,18 +1676,81 @@
 			)
 		)
 	)
-	(global_label "VALVE_TRIG"
+	(global_label "GND"
 		(shape bidirectional)
-		(at 64.77 110.49 0)
+		(at 52.07 110.49 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "7874e7ef-fc04-4c0a-a9f9-823ca95f9dd5")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 52.07 110.49 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "ENC_B"
+		(shape bidirectional)
+		(at 52.07 113.03 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "68aa6c7b-7bb4-48f0-a1c9-c17e22746e00")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 52.07 113.03 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "ENC_SW"
+		(shape bidirectional)
+		(at 67.31 107.95 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify left)
 		)
-		(uuid "6a28e216-33c9-4cdf-b7ce-32da655d7d43")
+		(uuid "637067ae-46c6-45b3-bf04-21fa042f18eb")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 64.77 110.49 0)
+			(at 67.31 107.95 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "GND"
+		(shape bidirectional)
+		(at 67.31 113.03 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "589f5a25-704f-430f-81b8-95dd5a9eea9e")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 67.31 113.03 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1369,14 +1761,14 @@
 		)
 	)
 	(symbol
-		(lib_id "Connector:Conn_01x07_Pin")
+		(lib_id "Connector:Conn_01x09_Pin")
 		(at 129.54 115.57 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "d982d119-372c-45ef-b05e-f36c5bc624be")
+		(uuid "1af8bbea-c38c-4dad-9036-0582a0ee04b4")
 		(property "Reference" "J1"
 			(at 129.54 102.87 0)
 			(effects
@@ -1393,7 +1785,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical"
+		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x09_P2.54mm_Vertical"
 			(at 129.54 115.57 0)
 			(effects
 				(font
@@ -1421,29 +1813,35 @@
 			)
 		)
 		(pin "1"
-			(uuid "7f9b870d-fefd-4665-a934-810aed5ffe63")
+			(uuid "a7e935a7-13af-46cf-8c81-6b21f3715f22")
 		)
 		(pin "2"
-			(uuid "ff5f109f-d6c1-4ac5-8d34-4a78732eb585")
+			(uuid "dd5463a2-2a52-4f87-b5f0-aac26c014b51")
 		)
 		(pin "3"
-			(uuid "51cf322d-980e-43dc-a22b-51882b05edae")
+			(uuid "08379bd8-292a-496f-b1e4-1d408a023f16")
 		)
 		(pin "4"
-			(uuid "9935eb2e-b70e-47d4-ac29-835457f4b111")
+			(uuid "ff898de8-db31-4e23-a569-4aebf9dc1870")
 		)
 		(pin "5"
-			(uuid "03f9a975-300a-4a73-a4cb-152cfa4648e4")
+			(uuid "fe4b60c3-4cdb-4d20-bb0d-6031aa82c06b")
 		)
 		(pin "6"
-			(uuid "8e8954ef-a332-4bff-8e1a-0ed07e8ed9ad")
+			(uuid "c24d003a-6754-4e93-b98d-cff42829508f")
 		)
 		(pin "7"
-			(uuid "24dec372-4428-48e2-9b66-c119a2f8f594")
+			(uuid "d0dd92ef-eaef-43bd-9cd8-f85c277b4f33")
+		)
+		(pin "8"
+			(uuid "67ab0dae-9136-4b2e-ab73-ff52366b4187")
+		)
+		(pin "9"
+			(uuid "66ba557f-4d16-4b34-ace4-5eb2a2665804")
 		)
 		(instances
 			(project "PCB-front"
-				(path "/2dc4e176-a9fb-4561-b284-9e4c6852c1de"
+				(path "/0705f0b8-6486-48b6-9d6b-cbe24fbbf180"
 					(reference "J1")
 					(unit 1)
 				)
@@ -1452,16 +1850,16 @@
 	)
 	(global_label "+3.3V"
 		(shape bidirectional)
-		(at 134.62 107.95 0)
+		(at 134.62 105.41 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify left)
 		)
-		(uuid "f4462535-799d-4978-b75a-64aa6ec52e7a")
+		(uuid "32cde09c-94c6-4ad2-874d-5d6650c1a1dc")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 134.62 107.95 0)
+			(at 134.62 105.41 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1473,6 +1871,27 @@
 	)
 	(global_label "GND"
 		(shape bidirectional)
+		(at 134.62 107.95 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "949835e7-0a95-4347-8677-427fb9bd263f")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 134.62 107.95 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "ENC_A"
+		(shape bidirectional)
 		(at 134.62 110.49 0)
 		(effects
 			(font
@@ -1480,7 +1899,7 @@
 			)
 			(justify left)
 		)
-		(uuid "4fa386c6-2748-4fa6-8128-f137ce6de235")
+		(uuid "13b243a1-c9f5-4dd8-b9f8-f1d6f1cd057d")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 134.62 110.49 0)
 			(effects
@@ -1492,7 +1911,7 @@
 			)
 		)
 	)
-	(global_label "VALVE_TRIG"
+	(global_label "ENC_SW"
 		(shape bidirectional)
 		(at 134.62 113.03 0)
 		(effects
@@ -1501,7 +1920,7 @@
 			)
 			(justify left)
 		)
-		(uuid "e50ce792-620e-4f2e-a7b8-b0af9d03316f")
+		(uuid "478dbdd0-523e-4f49-ac02-a546f7745df7")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 134.62 113.03 0)
 			(effects
@@ -1522,7 +1941,7 @@
 			)
 			(justify left)
 		)
-		(uuid "88f955c0-580a-4518-8d5e-538d0bc9723e")
+		(uuid "e34c617b-320b-4cb0-ab22-278dbcae81fd")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 134.62 115.57 0)
 			(effects
@@ -1543,7 +1962,7 @@
 			)
 			(justify left)
 		)
-		(uuid "60f74da8-6d20-4f05-97a2-138ef77c79f5")
+		(uuid "4d0f0cd7-a0ff-47d2-982a-6c6dd8817607")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 134.62 118.11 0)
 			(effects
@@ -1564,7 +1983,7 @@
 			)
 			(justify left)
 		)
-		(uuid "3914d53c-6f20-4957-8206-16d8d915dc6f")
+		(uuid "e4e182b1-a904-4668-9c5e-b5926d4cbf00")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 134.62 120.65 0)
 			(effects
@@ -1585,7 +2004,7 @@
 			)
 			(justify left)
 		)
-		(uuid "1011f19f-d9e2-46d3-be9d-5095f4f6f1f6")
+		(uuid "0f82b552-a660-4423-ad78-eecbffd5a975")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 134.62 123.19 0)
 			(effects
@@ -1597,7 +2016,28 @@
 			)
 		)
 	)
-	(text "Tank Manager - plytka przednia: wyswietlacz i przycisk z przodu, MPU i zlacze J1 z tylu. J1 laczy sie 1:1 z J7 plyty glownej."
+	(global_label "ENC_B"
+		(shape bidirectional)
+		(at 134.62 125.73 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "5d0e6106-e24e-4f19-9a04-2237a4aa9f65")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 134.62 125.73 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+	)
+	(text "Tank Manager - plytka przednia: wyswietlacz i enkoder z przodu, MPU i zlacze J1 z tylu. J1 laczy sie 1:1 z J7 plyty glownej."
 		(exclude_from_sim no)
 		(at 30 30 0)
 		(effects
@@ -1606,7 +2046,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "a2757bf4-4138-417f-8af5-93ed4319cd74")
+		(uuid "867cf8ab-f8e4-4edd-aa46-fab487528478")
 	)
 	(sheet_instances
 		(path "/"

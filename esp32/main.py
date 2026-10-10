@@ -2,10 +2,11 @@ import asyncio
 import json
 import os
 import struct
+import time
 from math import log, pow, atan2, sqrt, degrees, cos, sin
 
 import bluetooth
-from machine import Pin, I2C, SoftI2C, ADC, WDT, reset
+from machine import Pin, I2C, SoftI2C, ADC, WDT, reset, disable_irq, enable_irq
 
 import aioble
 import aioble.core
@@ -125,6 +126,14 @@ class OLED:
         self.oled.text(f" lvl:{level_clean:3d}%", 0, 55)
         self.oled.show()
 
+    def print_menu(self, position, count, name, value, editing):
+        if not self.oled: return
+        self.oled.fill(0)
+        self.oled.text(f"|MENU {position}/{count}>", 0, 0)
+        self.oled.text(f"{name}:", 0, 22)
+        self.oled.text(f"> {value} <" if editing else f"{value}", 0, 40)
+        self.oled.show()
+
     def print_passkey(self, passkey):
         if not self.oled: return
         self.oled.fill(0)
@@ -222,7 +231,6 @@ class Valve:
     AUTO_CLOSE_SEC = 600  # auto-close time
 
     def __init__(self):
-        self._VALVE_BTN = Pin(5, Pin.IN)
         self._OPEN_PIN = Pin(2, Pin.OUT)
         self._CLOSE_PIN = Pin(16, Pin.OUT)
 
@@ -243,9 +251,6 @@ class Valve:
     def get_target(self):
         # What the app shows: 1 when open or opening, 0 when closed or closing
         return 1 if self._STATE in (1, 3) else 0
-
-    def is_button_pressed(self):
-        return self._VALVE_BTN.value() == 1
 
     async def _run_valve(self, state):
         try:
@@ -308,29 +313,23 @@ class Valve:
         if state == 1 and ble is not None:
             self._auto_close_task = asyncio.create_task(self._auto_close(ble))
 
+    async def request(self, state, ble):
+        """Open (1) or close (0) the valve; used by the app command and by the panel menu"""
+        s = self.get_state()
+        if (state == 0 and s in (1, 3)) or (state == 1 and s in (0, 2)):
+            print(f"Valve movement requested: {state}")
+            await self._start_valve_task(state, ble)
+
+        # Confirms the accepted target to the app
+        await ble.write_characteristic("VALVE", state, '<B')
+
     async def control(self, ble):
         while True:
             try:
-                # Physical button pressed
-                if self.is_button_pressed():
-                    print("Physical button pressed.")
-                    new_state = 0 if self.get_state() in (1, 3) else 1
-                    print(f"Button press initiated the valve movement: {new_state}")
-                    await self._start_valve_task(new_state, ble)
-                    await ble.write_characteristic("VALVE_LOCKED", 1, '<B')
-                    await ble.write_characteristic("VALVE", new_state, '<B')
-
-                    while self.is_button_pressed():
-                        await asyncio.sleep_ms(50)
-
-                    print("Physical button released.")
-                    await ble.write_characteristic("VALVE_LOCKED", 0, '<B')
-                    continue
-
                 try:
-                    connection, data = await ble.characteristics["VALVE"].written(timeout_ms=100)
+                    connection, data = await ble.characteristics["VALVE"].written(timeout_ms=200)
                 except asyncio.TimeoutError:
-                    # Nothing written by the app - poll the button again
+                    # Nothing written by the app
                     continue
 
                 command = ble.decode_data(data)
@@ -338,15 +337,8 @@ class Valve:
                     print(f"Ignoring invalid valve command: {command}")
                     continue
 
-                # App switch state changed
                 print(f"App command received: {command}")
-                s = self.get_state()
-                if (command == 0 and s in (1, 3)) or (command == 1 and s in (0, 2)):
-                    print(f"App command initiated the valve movement: {command}")
-                    await self._start_valve_task(command, ble)
-
-                # Confirms to the app that the command was accepted
-                await ble.write_characteristic("VALVE", command, '<B')
+                await self.request(command, ble)
 
             except asyncio.CancelledError:
                 print("Valve control task cancelled")
@@ -371,8 +363,7 @@ class Heater:
     def __init__(self):
         self._HEATER_PIN = Pin(4, Pin.OUT)
         self._STATE = 0
-        self._HEATING_TEMP = 4.5
-        self._HYSTERESIS = 0.5
+        self._HYSTERESIS = 1.0  # heater turns off this many degrees above the threshold
         self.sensor_fault = False
 
     def configure(self):
@@ -385,14 +376,16 @@ class Heater:
     def get_state(self):
         return self._STATE
 
-    async def control(self, sensor, ble):
+    async def control(self, sensor, ble, settings):
         while True:
             try:
                 temperature = sensor.get_temperature()
                 current_state = self.get_state()
 
                 new_state = current_state
-                if temperature is None:
+                if not settings.auto_heating:
+                    new_state = 0
+                elif temperature is None:
                     # Broken sensor: never heat blindly
                     if not self.sensor_fault:
                         print("Temperature sensor fault - heater disabled")
@@ -400,9 +393,9 @@ class Heater:
                     new_state = 0
                 else:
                     self.sensor_fault = False
-                    if temperature <= (self._HEATING_TEMP - self._HYSTERESIS):
+                    if temperature <= settings.heating_threshold:
                         new_state = 1 # Turn ON
-                    elif temperature >= (self._HEATING_TEMP + self._HYSTERESIS):
+                    elif temperature >= (settings.heating_threshold + self._HYSTERESIS):
                         new_state = 0 # Turn OFF
 
                 if new_state != current_state:
@@ -410,7 +403,7 @@ class Heater:
                     print(f"Heater state changed to: {new_state}")
                     await ble.write_characteristic("HEATER", new_state, '<B')
 
-                await asyncio.sleep(5)
+                await asyncio.sleep(1)
 
             except asyncio.CancelledError:
                 print("Heater task cancelled")
@@ -423,35 +416,225 @@ class Heater:
 
 
 class Buzzer:
-    """Gray tank overfill alarm. Not used yet: the mute button (GPIO14) is not on the board."""
+    """Gray tank overfill alarm"""
     def __init__(self):
         self._BUZZER_PIN = Pin(13, Pin.OUT)
-        self._DISABLE_BTN = Pin(14, Pin.IN, Pin.PULL_DOWN)
-        self._LVL_THRESHOLD = 90
-        self._BUZZER_DISABLED = False
-        self._BTN_WAS_PRESSED = False
 
     def configure(self):
+        self.off()
+
+    def off(self):
         self._BUZZER_PIN.value(0)
-        self._BUZZER_DISABLED = False
 
-    def is_button_pressed(self):
-        return self._DISABLE_BTN.value() == 1
+    def control(self, valve_state, gray_lvl, settings):
+        # Sound while the gray tank is above the threshold and the valve is still closed
+        alarm = settings.buzzer_on and valve_state == 0 and gray_lvl > settings.gray_lvl_threshold
+        self._BUZZER_PIN.value(1 if alarm else 0)
 
-    def control(self, valve_state, gray_lvl):
-        if valve_state == 0 and gray_lvl > self._LVL_THRESHOLD:
-            # Toggle the mute only once per button press
-            pressed = self.is_button_pressed()
-            if pressed and not self._BTN_WAS_PRESSED:
-                self._BUZZER_DISABLED = not self._BUZZER_DISABLED
-            self._BTN_WAS_PRESSED = pressed
 
-            self._BUZZER_PIN.value(0 if self._BUZZER_DISABLED else 1)
+class Settings:
+    """User settings, changed from the panel menu or from the app, kept in flash"""
+    _FILE = "settings.json"
+    GRAY_LVL_MIN = 50
+    GRAY_LVL_MAX = 100
+    GRAY_LVL_STEP = 5
+    HEATING_MIN = 1
+    HEATING_MAX = 5
 
+    def __init__(self):
+        self.buzzer_on = True
+        self.gray_lvl_threshold = 90   # %
+        self.auto_heating = True
+        self.heating_threshold = 4     # Celsius
+
+    def load(self):
+        try:
+            with open(self._FILE) as f:
+                data = json.load(f)
+            self.update(data.get("buzzer_on"), data.get("gray_lvl_threshold"),
+                        data.get("auto_heating"), data.get("heating_threshold"), save=False)
+            print("Settings loaded")
+        except (OSError, ValueError):
+            print("Settings not found - using defaults")
+
+    def save(self):
+        try:
+            with open(self._FILE, "w") as f:
+                json.dump({
+                    "buzzer_on": self.buzzer_on,
+                    "gray_lvl_threshold": self.gray_lvl_threshold,
+                    "auto_heating": self.auto_heating,
+                    "heating_threshold": self.heating_threshold,
+                }, f)
+        except OSError as e:
+            print("Saving settings failed:", e)
+
+    def update(self, buzzer_on=None, gray_lvl_threshold=None, auto_heating=None, heating_threshold=None, save=True):
+        """Single place where values are validated; out-of-range values are clamped. True if changed."""
+        before = self.pack()
+        if buzzer_on is not None:
+            self.buzzer_on = bool(buzzer_on)
+        if gray_lvl_threshold is not None:
+            self.gray_lvl_threshold = min(max(int(gray_lvl_threshold), self.GRAY_LVL_MIN), self.GRAY_LVL_MAX)
+        if auto_heating is not None:
+            self.auto_heating = bool(auto_heating)
+        if heating_threshold is not None:
+            self.heating_threshold = min(max(int(heating_threshold), self.HEATING_MIN), self.HEATING_MAX)
+        changed = self.pack() != before
+        if changed and save:
+            self.save()
+        return changed
+
+    def pack(self):
+        # BLE payload of the SETTINGS characteristic
+        return struct.pack('<4B', 1 if self.buzzer_on else 0, self.gray_lvl_threshold,
+                           1 if self.auto_heating else 0, self.heating_threshold)
+
+
+class Encoder:
+    """EC12 rotary encoder with push button.
+    Common pin and one switch pin go to GND; A, B and SW use the internal pull-ups (active low)."""
+    _TRANSITIONS_PER_STEP = 4  # one detent = one full quadrature cycle
+    # Index: (previous AB << 2) | current AB; value: direction of a valid transition
+    _TABLE = (0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0)
+    _DEBOUNCE_POLLS = 2
+
+    def __init__(self):
+        self._A = Pin(17, Pin.IN, Pin.PULL_UP)
+        self._B = Pin(23, Pin.IN, Pin.PULL_UP)
+        self._SW = Pin(5, Pin.IN, Pin.PULL_UP)
+        self._last = 0
+        self._transitions = 0
+        self._pressed = False
+        self._stable_polls = 0
+
+    def configure(self):
+        self._last = (self._A.value() << 1) | self._B.value()
+        self._A.irq(self._on_edge, Pin.IRQ_RISING | Pin.IRQ_FALLING)
+        self._B.irq(self._on_edge, Pin.IRQ_RISING | Pin.IRQ_FALLING)
+
+    def _on_edge(self, pin):
+        current = (self._A.value() << 1) | self._B.value()
+        self._transitions += self._TABLE[(self._last << 2) | current]
+        self._last = current
+
+    def take_steps(self):
+        """Detents turned since the last call (positive = clockwise)"""
+        state = disable_irq()
+        steps = int(self._transitions / self._TRANSITIONS_PER_STEP)
+        self._transitions -= steps * self._TRANSITIONS_PER_STEP
+        enable_irq(state)
+        return steps
+
+    def poll_button(self):
+        """Call periodically; True once per (debounced) press"""
+        raw = self._SW.value() == 0
+        if raw == self._pressed:
+            self._stable_polls = 0
+            return False
+        self._stable_polls += 1
+        if self._stable_polls < self._DEBOUNCE_POLLS:
+            return False
+        self._stable_polls = 0
+        self._pressed = raw
+        return raw
+
+
+class Menu:
+    """Settings menu on the display, driven by the encoder"""
+    IDLE = 0     # normal tank screen
+    BROWSE = 1   # turning selects the item
+    EDIT = 2     # turning changes the value of the selected item
+    _TIMEOUT_MS = 15000
+
+    BUZZER = 0
+    GRAY_LVL_THR = 1
+    AUTO_HEATING = 2
+    HEATING_THR = 3
+    VALVE = 4
+    _NAMES = ("BUZZER", "GRAY LVL THR", "AUTO-HEATING", "HEATING THR", "VALVE")
+
+    def __init__(self, settings, valve, ble):
+        self._settings = settings
+        self._valve = valve
+        self._ble = ble
+        self.state = self.IDLE
+        self.item = 0
+        self._edit_value = 0
+        self._last_activity = 0
+
+    def _value_text(self):
+        s = self._settings
+        if self.item == self.BUZZER:
+            return "ON" if s.buzzer_on else "OFF"
+        if self.item == self.GRAY_LVL_THR:
+            return f"{self._edit_value if self.state == self.EDIT else s.gray_lvl_threshold}%"
+        if self.item == self.AUTO_HEATING:
+            return "ON" if s.auto_heating else "OFF"
+        if self.item == self.HEATING_THR:
+            return f"{self._edit_value if self.state == self.EDIT else s.heating_threshold}'C"
+        return "OPEN" if self._valve.get_target() else "CLOSED"
+
+    def screen(self):
+        """What to draw: (position, count, name, value, editing)"""
+        return (self.item + 1, len(self._NAMES), self._NAMES[self.item], self._value_text(), self.state == self.EDIT)
+
+    async def _commit_edit(self):
+        if self.item == self.GRAY_LVL_THR:
+            changed = self._settings.update(gray_lvl_threshold=self._edit_value)
         else:
-            self._BUZZER_PIN.value(0)
-            self._BUZZER_DISABLED = False
-            self._BTN_WAS_PRESSED = False
+            changed = self._settings.update(heating_threshold=self._edit_value)
+        if changed:
+            await self._ble.send_settings()
+
+    async def handle(self, steps, pressed):
+        """Feed encoder input; returns True when the display needs a redraw"""
+        now = time.ticks_ms()
+        if not steps and not pressed:
+            if self.state != self.IDLE and time.ticks_diff(now, self._last_activity) > self._TIMEOUT_MS:
+                if self.state == self.EDIT:
+                    await self._commit_edit()
+                self.state = self.IDLE
+                return True
+            return False
+        self._last_activity = now
+        s = self._settings
+
+        if self.state == self.IDLE:
+            # Any press opens the menu; turning alone does nothing on the tank screen
+            if pressed:
+                self.state = self.BROWSE
+                return True
+            return False
+
+        if self.state == self.BROWSE:
+            if steps:
+                self.item = (self.item + steps) % len(self._NAMES)
+            if pressed:
+                if self.item == self.BUZZER:
+                    s.update(buzzer_on=not s.buzzer_on)
+                    await self._ble.send_settings()
+                elif self.item == self.AUTO_HEATING:
+                    s.update(auto_heating=not s.auto_heating)
+                    await self._ble.send_settings()
+                elif self.item == self.VALVE:
+                    await self._valve.request(0 if self._valve.get_target() else 1, self._ble)
+                else:
+                    self._edit_value = s.gray_lvl_threshold if self.item == self.GRAY_LVL_THR else s.heating_threshold
+                    self.state = self.EDIT
+            return True
+
+        # EDIT
+        if steps:
+            if self.item == self.GRAY_LVL_THR:
+                value = self._edit_value + steps * s.GRAY_LVL_STEP
+                self._edit_value = min(max(value, s.GRAY_LVL_MIN), s.GRAY_LVL_MAX)
+            else:
+                self._edit_value = min(max(self._edit_value + steps, s.HEATING_MIN), s.HEATING_MAX)
+        if pressed:
+            await self._commit_edit()
+            self.state = self.BROWSE
+        return True
 
 
 class Bluetooth:
@@ -471,6 +654,7 @@ class Bluetooth:
             "VALVE": bluetooth.UUID('00000000-0000-0000-0000-000000000005'),
             "VALVE_LOCKED": bluetooth.UUID('00000000-0000-0000-0000-000000000006'),
             "HEATER": bluetooth.UUID('00000000-0000-0000-0000-000000000007'),
+            "SETTINGS": bluetooth.UUID('00000000-0000-0000-0000-000000000008'),
         }
         self.characteristics = {}
         # Pairing code currently shown on the display, None when no pairing is in progress
@@ -488,6 +672,12 @@ class Bluetooth:
                 self.characteristics[name] = aioble.Characteristic(
                     ble_service, self.characteristic_uuids[name], read=True, write=True, capture=True,
                     notify=True, indicate=True
+                )
+                self.characteristics[name].flags |= (_FLAG_READ_AUTHENTICATED | _FLAG_WRITE_AUTHENTICATED)
+            elif name == "SETTINGS":
+                self.characteristics[name] = aioble.Characteristic(
+                    ble_service, self.characteristic_uuids[name], read=True, write=True, capture=True,
+                    notify=True
                 )
                 self.characteristics[name].flags |= (_FLAG_READ_AUTHENTICATED | _FLAG_WRITE_AUTHENTICATED)
             elif name in self._STATE_CHARACTERISTICS:
@@ -536,7 +726,12 @@ class Bluetooth:
         return None
 
     async def write_characteristic(self, name, data, fmt, indicate=True):
-        encoded_data = struct.pack(fmt, data)
+        await self._send(name, struct.pack(fmt, data), indicate)
+
+    async def send_settings(self):
+        await self._send("SETTINGS", settings.pack(), False)
+
+    async def _send(self, name, encoded_data, indicate):
         # Update local value but do not broadcast to all
         self.characteristics[name].write(encoded_data, send_update=False)
 
@@ -565,8 +760,10 @@ class Bluetooth:
         # Cheap periodic re-send (no acknowledgement) so that an app which subscribed late,
         # e.g. after a reconnect, still gets the current state
         await self.write_characteristic("VALVE", valve.get_target(), '<B', indicate=False)
-        await self.write_characteristic("VALVE_LOCKED", 1 if valve.is_button_pressed() else 0, '<B', indicate=False)
+        # VALVE_LOCKED is kept for the app protocol; there is no physical valve button any more
+        await self.write_characteristic("VALVE_LOCKED", 0, '<B', indicate=False)
         await self.write_characteristic("HEATER", heater.get_state(), '<B', indicate=False)
+        await self.send_settings()
 
     async def advertise(self):
         print("Starting BLE advertising...")
@@ -595,8 +792,9 @@ class Bluetooth:
                             self.passkey = None
 
                     await self.write_characteristic("VALVE", valve.get_target(), '<B')
-                    await self.write_characteristic("VALVE_LOCKED", 1 if valve.is_button_pressed() else 0, '<B')
+                    await self.write_characteristic("VALVE_LOCKED", 0, '<B')
                     await self.write_characteristic("HEATER", heater.get_state(), '<B')
+                    await self.send_settings()
                     await connection.disconnected()
                     print("Disconnected from", connection.device)
             except asyncio.CancelledError:
@@ -617,6 +815,12 @@ clean_lvl_sensor = CleanLevelSensor()
 temp_sensor = TemperatureSensor()
 heater = Heater()
 valve = Valve()
+buzzer = Buzzer()
+settings = Settings()
+encoder = Encoder()
+menu = Menu(settings, valve, ble)
+# Latest sensor readings, shared between the sensor task and the display task
+readings = {"gray": 0, "clean": 0, "temp": None}
 
 async def mpu_sensor_task():
     while True:
@@ -652,14 +856,69 @@ async def environmental_sensors_task():
                 await ble.refresh_state()
             cycle += 1
 
-            if ble.passkey is not None:
-                oled.print_passkey(ble.passkey)
-            else:
-                oled.print_tank_info(gray_lvl, clean_lvl, valve.get_state(), temp_celsius)
+            readings["gray"] = gray_lvl
+            readings["clean"] = clean_lvl
+            readings["temp"] = temp_celsius
+            buzzer.control(valve.get_state(), gray_lvl, settings)
 
         except Exception as e:
             print(f"Error in environmental sensors task: {e}")
         await asyncio.sleep(1)
+
+async def settings_task():
+    # Settings written by the app
+    characteristic = ble.characteristics["SETTINGS"]
+    while True:
+        try:
+            try:
+                connection, data = await characteristic.written(timeout_ms=500)
+            except asyncio.TimeoutError:
+                continue
+            if data is None or len(data) < 4:
+                print(f"Ignoring invalid settings: {data}")
+            elif settings.update(data[0], data[1], data[2], data[3]):
+                print("Settings changed from the app")
+            # Always answer with the values actually in force (they may have been clamped)
+            await ble.send_settings()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"Error in settings task: {e}")
+            await asyncio.sleep_ms(200)
+
+async def ui_task():
+    # The only task that draws on the display: pairing code > menu > tank screen
+    encoder.configure()
+    last_draw = None
+    last_refresh = time.ticks_ms()
+    while True:
+        try:
+            redraw = await menu.handle(encoder.take_steps(), encoder.poll_button())
+            now = time.ticks_ms()
+            # Values on screen (levels, valve state) also change on their own
+            if time.ticks_diff(now, last_refresh) >= 500:
+                redraw = True
+            if redraw:
+                last_refresh = now
+                if ble.passkey is not None:
+                    draw = ("passkey", ble.passkey)
+                elif menu.state != Menu.IDLE:
+                    draw = ("menu",) + menu.screen()
+                else:
+                    draw = ("tank", readings["gray"], readings["clean"], valve.get_state(), readings["temp"])
+                if draw != last_draw:
+                    last_draw = draw
+                    if draw[0] == "passkey":
+                        oled.print_passkey(draw[1])
+                    elif draw[0] == "menu":
+                        oled.print_menu(*draw[1:])
+                    else:
+                        oled.print_tank_info(*draw[1:])
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"Error in UI task: {e}")
+        await asyncio.sleep_ms(50)
 
 async def watchdog_task():
     wdt = WDT(timeout=WATCHDOG_MS)
@@ -671,19 +930,24 @@ def safe_outputs():
     # Heater and valve motor off, whatever state the program stopped in
     heater.control_heater(0)
     valve.stop()
+    buzzer.off()
 
 async def main():
     ble.configure()
     oled.configure()
     valve.configure()
     heater.configure()
+    buzzer.configure()
+    settings.load()
 
     tasks = [
         asyncio.create_task(ble.advertise()),
         asyncio.create_task(environmental_sensors_task()),
         asyncio.create_task(mpu_sensor_task()),
-        asyncio.create_task(heater.control(temp_sensor, ble)),
+        asyncio.create_task(heater.control(temp_sensor, ble, settings)),
         asyncio.create_task(valve.control(ble)),
+        asyncio.create_task(settings_task()),
+        asyncio.create_task(ui_task()),
     ]
     if WATCHDOG_MS:
         tasks.append(asyncio.create_task(watchdog_task()))
