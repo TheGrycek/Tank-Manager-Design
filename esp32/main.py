@@ -113,6 +113,11 @@ class GrayLevelSensor:
         self._LVL_SENSOR_PIN = Pin(32, Pin.IN)
         self._MAX_ADC = 4095
         self._MAX_LVL = 100
+        self._MAX_V = 3.3
+        self._R_DIVIDER = 200.0  # fixed resistor to 3.3V
+        # TODO: calibrate - sensor resistance with the tank empty / full (measure it)
+        self._R_EMPTY = 0.0
+        self._R_FULL = 190.0
         self.adc = None
 
     def configure(self):
@@ -123,7 +128,12 @@ class GrayLevelSensor:
         except OSError: return None
 
     def get_level(self):
-        return int((self.adc.read() / self._MAX_ADC) * self._MAX_LVL)
+        # Sensor is on the low side of the divider (ADC to GND), fixed resistor to 3.3V
+        v = (self.adc.read() * self._MAX_V) / self._MAX_ADC
+        v = min(max(v, 0.0), self._MAX_V - 1e-10)
+        r_sensor = self._R_DIVIDER * v / (self._MAX_V - v)
+        level = (r_sensor - self._R_EMPTY) / (self._R_FULL - self._R_EMPTY) * self._MAX_LVL
+        return int(min(max(level, 0), self._MAX_LVL))
 
 
 class CleanLevelSensor:
@@ -132,6 +142,11 @@ class CleanLevelSensor:
         self._LVL_SENSOR_PIN = Pin(35, Pin.IN)
         self._MAX_ADC = 4095
         self._MAX_LVL = 100
+        self._MAX_V = 3.3
+        self._R_DIVIDER = 200.0  # fixed resistor to 3.3V
+        # TODO: calibrate - sensor resistance with the tank empty / full (measure it)
+        self._R_EMPTY = 0.0
+        self._R_FULL = 190.0
         self.adc = None
 
     def configure(self):
@@ -143,7 +158,12 @@ class CleanLevelSensor:
             return None
 
     def get_level(self):
-        return int((self.adc.read() / self._MAX_ADC) * self._MAX_LVL)
+        # Sensor is on the low side of the divider (ADC to GND), fixed resistor to 3.3V
+        v = (self.adc.read() * self._MAX_V) / self._MAX_ADC
+        v = min(max(v, 0.0), self._MAX_V - 1e-10)
+        r_sensor = self._R_DIVIDER * v / (self._MAX_V - v)
+        level = (r_sensor - self._R_EMPTY) / (self._R_FULL - self._R_EMPTY) * self._MAX_LVL
+        return int(min(max(level, 0), self._MAX_LVL))
 
 
 class TemperatureSensor:
@@ -168,8 +188,10 @@ class TemperatureSensor:
             return None
 
     def get_temperature(self):
-        Vntc = max((self.adc.read() * self._MAX_V) / self._MAX_ADC, 1e-10)
-        Rntc = max(self._R_DIVIDER * ((self._MAX_V / Vntc) - 1), 1e-10)
+        # NTC is on the low side of the divider (ADC to GND), fixed resistor to 3.3V
+        Vntc = (self.adc.read() * self._MAX_V) / self._MAX_ADC
+        Vntc = min(max(Vntc, 1e-10), self._MAX_V - 1e-10)
+        Rntc = max(self._R_DIVIDER * Vntc / (self._MAX_V - Vntc), 1e-10)
         temp_k = (1 / (self._NTC_A + (self._NTC_B * log(Rntc)) + (self._NTC_C * pow(log(Rntc), 3.0))))
         return temp_k + self._KELVINS_ZERO
 
@@ -180,8 +202,8 @@ class Valve:
     AUTO_CLOSE_SEC = 600  # auto-close time
 
     def __init__(self):
-        self._VALVE_BTN = Pin(2, Pin.IN)
-        self._OPEN_PIN = Pin(5, Pin.OUT)
+        self._VALVE_BTN = Pin(5, Pin.IN)
+        self._OPEN_PIN = Pin(2, Pin.OUT)
         self._CLOSE_PIN = Pin(16, Pin.OUT)
 
         self._STATE = 0 # 0-closed, 1-open, 2-closing, 3-opening
@@ -358,7 +380,7 @@ class Heater:
 
 class Buzzer:
     def __init__(self):
-        self._BUZZER_PIN = Pin(17, Pin.OUT)
+        self._BUZZER_PIN = Pin(13, Pin.OUT)
         self._DISABLE_BTN = Pin(14, Pin.OUT)
         self._LVL_THRESHOLD = 90
         self._BUZZER_DISABLED = False

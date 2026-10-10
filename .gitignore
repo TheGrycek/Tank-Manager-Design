@@ -205,3 +205,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+PCB-design/PCB-design-backups
+PCB-front/PCB-front-backups
+PCB-design/renders
+PCB-front/renders
+.idea
