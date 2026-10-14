@@ -160,6 +160,12 @@ class Valve:
         if state == 1 and ble is not None:
             self._auto_close_task = asyncio.create_task(self._auto_close(ble))
 
+    async def close_on_start(self):
+        """After a reset the real position is unknown (the valve may have been left open): drive it
+        closed, the limit switch stops the motor if it already is"""
+        print("Closing the valve after start-up")
+        await self._start_valve_task(0)
+
     async def request(self, state, ble):
         """Open (1) or close (0) the valve; used by the app command and by the panel menu"""
         s = self.get_state()
@@ -263,20 +269,41 @@ class Heater:
 
 
 class Buzzer:
-    """Gray tank overfill alarm"""
+    """Gray tank overfill alarm: a double beep every second"""
+    _BEEP_MS = 100
+    _GAP_MS = 100
+    _PERIOD_MS = 1000
+
     def __init__(self):
         self._BUZZER_PIN = Pin(26, Pin.OUT)
+        self._alarm = False
 
     def configure(self):
         self.off()
 
     def off(self):
+        self._alarm = False
         self._BUZZER_PIN.value(0)
 
     def control(self, valve_state, gray_lvl, settings):
         # Sound while the gray tank is above the threshold and the valve is still closed
-        alarm = settings.buzzer_on and valve_state == 0 and gray_lvl > settings.gray_lvl_threshold
-        self._BUZZER_PIN.value(1 if alarm else 0)
+        self._alarm = settings.buzzer_on and valve_state == 0 and gray_lvl > settings.gray_lvl_threshold
+
+    async def run(self):
+        """Plays the beeps while the alarm is on"""
+        pause_ms = self._PERIOD_MS - 2 * self._BEEP_MS - self._GAP_MS
+        try:
+            while True:
+                if not self._alarm:
+                    await asyncio.sleep_ms(50)
+                    continue
+                for gap_ms in (self._GAP_MS, pause_ms):
+                    self._BUZZER_PIN.value(1)
+                    await asyncio.sleep_ms(self._BEEP_MS)
+                    self._BUZZER_PIN.value(0)
+                    await asyncio.sleep_ms(gap_ms)
+        finally:
+            self._BUZZER_PIN.value(0)
 
 
 class Encoder:

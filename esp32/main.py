@@ -162,6 +162,7 @@ async def main():
     heater.configure()
     buzzer.configure()
     settings.load()
+    await valve.close_on_start()
 
     tasks = [
         asyncio.create_task(ble.advertise()),
@@ -171,6 +172,7 @@ async def main():
         asyncio.create_task(valve.control(ble)),
         asyncio.create_task(settings_task()),
         asyncio.create_task(ui_task()),
+        asyncio.create_task(buzzer.run()),
     ]
     if WATCHDOG_MS:
         tasks.append(asyncio.create_task(watchdog_task()))
