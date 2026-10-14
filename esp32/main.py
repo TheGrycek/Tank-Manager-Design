@@ -4,6 +4,12 @@ import time
 from machine import WDT, reset
 
 import aioble
+import aioble.core
+
+# Start Bluetooth (loading the stored bonds) before the larger modules are compiled: compiling
+# them grows the Python heap into the memory the Bluetooth controller needs, and its init then fails
+aioble.core.ensure_active()
+
 from peripherals import OLED, Valve, Heater, Buzzer, Encoder
 from sensors import MPU, GrayLevelSensor, CleanLevelSensor, TemperatureSensor
 from setup import Settings, Menu, Bluetooth

@@ -211,3 +211,10 @@ PCB-front/PCB-front-backups
 PCB-design/renders
 PCB-front/renders
 .idea
+
+# KiCad: local caches, per-user view settings, lock and autosave files
+fp-info-cache
+*.kicad_prl
+*.lck
+_autosave-*
+\#auto_saved_files\#

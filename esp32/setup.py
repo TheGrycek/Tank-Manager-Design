@@ -5,6 +5,7 @@ import struct
 import time
 
 import bluetooth
+from micropython import schedule
 
 import aioble
 import aioble.core
@@ -12,8 +13,14 @@ import aioble.device
 import aioble.security
 
 _IRQ_ENCRYPTION_UPDATE = 28
+_IRQ_GET_SECRET = 29
+_IRQ_SET_SECRET = 30
 _IRQ_PASSKEY_ACTION = 31
 _PASSKEY_ACTION_DISP = 3
+# Bond records (NimBLE ble_store_value_sec) kept by aioble.security, keyed by (type, peer address)
+_SECRET_OUR_SEC = 1
+_SECRET_PEER_SEC = 2
+_PEER_SEC_IRK = 41  # offset of the peer's IRK (16 bytes, little-endian), followed by irk_present
 
 
 class Settings:
@@ -90,7 +97,8 @@ class Menu:
     HEATING_THR = 3
     VALVE = 4
     MPU = 5
-    _NAMES = ("BUZZER", "GRAY LVL THR", "AUTO-HEATING", "HEATING THR", "VALVE", "MPU")
+    LEVEL = 6
+    _NAMES = ("BUZZER", "GRAY LVL THR", "AUTO-HEATING", "HEATING THR", "VALVE", "MPU", "LEVEL")
 
     def __init__(self, settings, valve, ble, mpu):
         self._settings = settings
@@ -114,7 +122,9 @@ class Menu:
         if self.item == self.HEATING_THR:
             return f"{self._edit_value if self.state == self.EDIT else s.heating_threshold}'C"
         if self.item == self.MPU:
-            return "CALIBRATE"
+            return "CALIBRATED" if self._mpu.calibrated else "NOT CALIBRATED"
+        if self.item == self.LEVEL:
+            return "SET ZERO"
         return "OPEN" if self._valve.get_target() else "CLOSED"
 
     def screen(self):
@@ -188,6 +198,10 @@ class Menu:
                 elif self.item == self.MPU:
                     self._calibration_task = self._mpu.start_calibration()
                     self.state = self.CALIBRATE
+                elif self.item == self.LEVEL:
+                    # Shown like a calibration result
+                    self._mpu.calibration_screen = self._mpu.set_level()
+                    self.state = self.CALIBRATE
                 else:
                     self._edit_value = s.gray_lvl_threshold if self.item == self.GRAY_LVL_THR else s.heating_threshold
                     self.state = self.EDIT
@@ -209,6 +223,8 @@ class Menu:
 class Bluetooth:
     # Characteristics the app must always see up to date: indicated on change, re-sent periodically
     _STATE_CHARACTERISTICS = ("VALVE", "VALVE_LOCKED", "HEATER")
+    _CHARACTERISTIC_ORDER = ("CLEAN_LEVEL_SENSOR", "GRAY_LEVEL_SENSOR", "GRAY_TEMP_SENSOR", "MPU_SENSOR",
+                             "VALVE", "VALVE_LOCKED", "HEATER", "SETTINGS")
 
     def __init__(self, settings, valve, heater):
         self._settings = settings
@@ -239,7 +255,9 @@ class Bluetooth:
         _FLAG_READ_AUTHENTICATED = 0x0400
         _FLAG_WRITE_AUTHENTICATED = 0x2000
 
-        for name in self.characteristic_uuids:
+        # Registered in a fixed order (MicroPython dicts do not keep insertion order), so the
+        # attribute handles stay the same; new characteristics go at the end
+        for name in self._CHARACTERISTIC_ORDER:
             if name == "VALVE":
                 self.characteristics[name] = aioble.Characteristic(
                     ble_service, self.characteristic_uuids[name], read=True, write=True, capture=True,
@@ -264,10 +282,61 @@ class Bluetooth:
                 self.characteristics[name].flags |= _FLAG_READ_AUTHENTICATED
 
         aioble.register_services(ble_service)
-        aioble.core.register_irq_handler(self._security_handler, None)
+        # Ahead of aioble.security's handler, which must not see bond lookups by a private address
+        aioble.core._irq_handlers.insert(0, self._security_handler)
         print("BLE Service Registered and Advertising")
 
+    @staticmethod
+    def _bonded_key(key):
+        """Stored key (type + identity address) of the bonded phone behind a resolvable private
+        address, or None.
+
+        Phones connect from a random address that changes with every connection. The ESP32
+        controller does not resolve it in MicroPython, so NimBLE would look the bond up under that
+        address, not find it and ask for pairing again. Resolve it here with the IRK the phone gave
+        during pairing (Bluetooth Core Spec, vol 3 part H, 2.2.2: hash = AES(IRK, prand) mod 2^24)."""
+        if key is None or len(key) != 7 or key[0] != 1:  # random address only
+            return None
+        address = bytes(reversed(key[1:]))  # most significant byte first
+        if address[0] >> 6 != 0b01:  # resolvable private address only
+            return None
+        # Imported here, not at start-up: importing it before Bluetooth is up breaks the BLE init
+        import cryptolib
+        plaintext = bytes(13) + address[:3]
+        for (sec_type, stored_key), value in aioble.security._secrets.items():
+            if sec_type != _SECRET_PEER_SEC or len(value) <= _PEER_SEC_IRK + 16 or not value[_PEER_SEC_IRK + 16]:
+                continue
+            irk = bytes(reversed(value[_PEER_SEC_IRK:_PEER_SEC_IRK + 16]))
+            if cryptolib.aes(irk, 1).encrypt(plaintext)[13:] == address[3:]:
+                return stored_key
+        return None
+
+    def _bond_secret(self, event, data):
+        """Bond reads and writes by a private address go to the record of the phone's identity"""
+        if event == _IRQ_GET_SECRET:
+            sec_type, index, key = data
+        else:
+            sec_type, key, value = data
+        if sec_type not in (_SECRET_OUR_SEC, _SECRET_PEER_SEC):
+            return None
+        identity = self._bonded_key(bytes(key) if key else None)
+        if identity is None:
+            return None  # aioble.security handles it as usual
+        secrets = aioble.security._secrets
+        if event == _IRQ_GET_SECRET:
+            return secrets.get((sec_type, identity), None)
+        if value:
+            secrets[sec_type, identity] = bytes(value)
+        elif (sec_type, identity) in secrets:
+            # The phone has dropped the bond and pairs again
+            del secrets[sec_type, identity]
+        aioble.security._modified = True
+        schedule(aioble.security._save_secrets, None)
+        return True
+
     def _security_handler(self, event, data):
+        if event == _IRQ_GET_SECRET or event == _IRQ_SET_SECRET:
+            return self._bond_secret(event, data)
         if event == _IRQ_PASSKEY_ACTION:
             conn_handle, action, passkey = data
             if action == _PASSKEY_ACTION_DISP:

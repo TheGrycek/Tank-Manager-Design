@@ -99,6 +99,7 @@ class MPU:
     _FLAT_TIMEOUT_MS = 60000  # accelerometer step: time to lay the device down
     _FLAT_HOLD_MS = 3000  # and how long it must then stay flat
     _FLAT_MAX_ACC = 1.5  # m/s^2 on X and Y, above this the device is not lying flat
+    _LEVEL_SAMPLES = 16  # accelerometer readings averaged when the level is set
 
     def __init__(self):
         self._MPU_I2C_SCL_PIN = Pin(22)
@@ -107,6 +108,8 @@ class MPU:
         self.i2c = None
         self.mpu = None
         self._acc_bias = (0.0, 0.0, 0.0)
+        # Pitch and roll (degrees) of the mounted device with the vehicle standing level, set from the menu
+        self._level = (0.0, 0.0)
         # False until a calibration is loaded from the file or done from the menu: angles are not reported then
         self.calibrated = False
         # True while the calibration runs: readings are raw then and must not be used
@@ -140,6 +143,7 @@ class MPU:
             self.mpu.ak8963._scale = tuple(data["mag_scale"])
             # Accelerometer bias (m/s^2), missing in files saved by the magnetometer-only calibration
             self._acc_bias = tuple(data.get("acc_bias", (0.0, 0.0, 0.0)))
+            self._level = tuple(data.get("level", (0.0, 0.0)))
             self.calibrated = True
             print("MPU calibration loaded")
         except (OSError, ValueError, KeyError):
@@ -149,14 +153,8 @@ class MPU:
     def _save_calibration(self):
         ak = self.mpu.ak8963
         with open(self._CALIBRATION_FILE, "w") as f:
-            json.dump({"mag_offset": ak._offset, "mag_scale": ak._scale, "acc_bias": self._acc_bias}, f)
-
-    def calibrate_magnetometer(self, count=256, delay=200):
-        """Blocking (about a minute): run from the REPL and rotate the device around all axes."""
-        offset, scale = self.mpu.ak8963.calibrate(count=count, delay=delay)
-        self._save_calibration()
-        self.calibrated = True
-        print("MPU calibration saved:", offset, scale)
+            json.dump({"mag_offset": ak._offset, "mag_scale": ak._scale, "acc_bias": self._acc_bias,
+                       "level": self._level}, f)
 
     def start_calibration(self):
         """Starts the calibration in the background (the panel menu); returns its task.
@@ -172,6 +170,7 @@ class MPU:
             return
         ak = self.mpu.ak8963
         old_mag = (ak._offset, ak._scale)
+        old_acc_bias = self._acc_bias
         error = "sensor error"
         try:
             # Raw magnetometer readings while measuring
@@ -197,6 +196,7 @@ class MPU:
             # Also when cancelled from the menu: keep the previous calibration
             if error is not None:
                 ak._offset, ak._scale = old_mag
+                self._acc_bias = old_acc_bias
             self.calibrating = False
         if error is None:
             self.calibration_screen = ("", "Calibration", "saved", "")
@@ -259,37 +259,54 @@ class MPU:
             await asyncio.sleep_ms(50)
         return None
 
-    @staticmethod
-    def _to_mounted_frame(vector, up, up_sign):
-        """Sensor frame -> frame of the mounted device (x forward, y left, z up).
-        Forward is the sensor X axis for a device lying flat and the board normal (sensor Z) for one standing upright."""
-        forward = 0 if up == 2 else 2
-        side = 3 - up - forward
-        # Right-handed frame: side = up x forward
-        side_sign = up_sign if (forward - up) % 3 == 1 else -up_sign
-        return vector[forward], side_sign * vector[side], up_sign * vector[up]
+    def set_level(self):
+        """Takes the current pitch and roll as zero (the menu, with the vehicle standing level).
+        Returns the lines for the display: (step, line, line, line)"""
+        if self.mpu is None:
+            return "", "MPU not found", "", ""
+        if not self.calibrated or self.calibrating:
+            return "", "Calibrate the", "MPU first", ""
+        old_level = self._level
+        try:
+            total = [0.0, 0.0, 0.0]
+            for _ in range(self._LEVEL_SAMPLES):
+                acc = self._mounted_acceleration()
+                for i in range(3):
+                    total[i] += acc[i]
+            roll, pitch = self._tilt(*total)
+            self._level = (degrees(pitch), degrees(roll))
+            self._save_calibration()
+        except OSError as e:
+            print("Setting the level failed:", e)
+            self._level = old_level
+            return "", "Level", "failed:", "sensor error"
+        print("MPU level saved:", self._level)
+        return "", "Level", "saved", ""
 
-    def get_rotation(self):
+    def _mounted_acceleration(self):
         acc = self.mpu.acceleration
         acc = (acc[0] - self._acc_bias[0], acc[1] - self._acc_bias[1], acc[2] - self._acc_bias[2])
+        # The device is calibrated lying flat but mounted upright, turned 90 degrees around X:
+        # sensor Y points up (where Z was) and sensor Z points where -Y was. Undo that rotation,
+        # so the angles are the ones the device would give lying flat (0 pitch and roll when mounted)
+        return acc[0], -acc[2], acc[1]
+
+    @staticmethod
+    def _tilt(ax, ay, az):
+        """Roll and pitch in radians"""
+        return atan2(ay, az), atan2(-ax, sqrt((ay ** 2) + (az ** 2)))
+
+    def get_rotation(self):
+        ax, ay, az = self._mounted_acceleration()
         raw_mx, raw_my, raw_mz = self.mpu.magnetic
         # Magnetometer axes expressed in the accelerometer frame
         mag = (raw_my, raw_mx, -raw_mz)
+        # The same rotation to the mounted position as for the accelerometer
+        mx, my, mz = mag[0], -mag[2], mag[1]
 
-        # The device is calibrated lying flat but works standing upright: the sensor axis closest
-        # to vertical is taken as "up", so pitch and roll are 0 in the mounted position
-        up = 0
-        if abs(acc[1]) > abs(acc[up]):
-            up = 1
-        if abs(acc[2]) > abs(acc[up]):
-            up = 2
-        up_sign = 1 if acc[up] >= 0 else -1
-        ax, ay, az = self._to_mounted_frame(acc, up, up_sign)
-        mx, my, mz = self._to_mounted_frame(mag, up, up_sign)
-
-        roll = atan2(ay, az)
-        pitch = atan2(-ax, sqrt((ay ** 2) + (az ** 2)))
+        roll, pitch = self._tilt(ax, ay, az)
         bx = (mx * cos(pitch)) + (sin(pitch) * ((my * sin(roll)) + (mz * cos(roll))))
         by = (mz * sin(roll)) - (my * cos(roll))
         yaw = atan2(-by, bx)
-        return degrees(pitch), degrees(roll), degrees(yaw)
+        # Pitch and roll are reported relative to the level set from the menu
+        return degrees(pitch) - self._level[0], degrees(roll) - self._level[1], degrees(yaw)
