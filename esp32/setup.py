@@ -200,7 +200,7 @@ class Menu:
                     self.state = self.CALIBRATE
                 elif self.item == self.LEVEL:
                     # Shown like a calibration result
-                    self._mpu.calibration_screen = self._mpu.set_level()
+                    self._mpu.calibration_screen = await self._mpu.set_level()
                     self.state = self.CALIBRATE
                 else:
                     self._edit_value = s.gray_lvl_threshold if self.item == self.GRAY_LVL_THR else s.heating_threshold

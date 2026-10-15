@@ -71,7 +71,7 @@ then crashes at start-up (`BLE_INIT: hci inits failed`).
 | Clean tank level | `...0001` | `uint8`, % | read, notify |
 | Gray tank level | `...0002` | `uint8`, % | read, notify |
 | Gray tank temperature | `...0003` | `int16`, 0.01 °C, -32768 = sensor fault | read, notify |
-| MPU | `...0004` | 3 x `float32`: pitch, roll, yaw in degrees | read, notify |
+| MPU | `...0004` | 3 x `float32`: pitch (> 0 front up), roll (> 0 right side down), heading of the front (0-360, clockwise from magnetic north), degrees | read, notify |
 | Valve | `...0005` | `uint8`, 1 = open, 0 = closed | read, write, notify, indicate |
 | Valve state | `...0006` | `uint8`, 0 = closed, 1 = open, 2 = closing, 3 = opening | read, notify, indicate |
 | Heater | `...0007` | `uint8`, 1 = on | read, notify, indicate |
@@ -102,8 +102,9 @@ the previous one.
 | --- | --- |
 | `failed: rotate more` | An axis of the magnetometer changed by less than 20 µT in step 1 |
 | `failed: not laid flat` | The device was not flat and still for 3 s within 60 s |
-| `failed: sensor error` | Reading the sensor or saving the file failed |
-| `MPU not found` | The sensor does not answer on I2C |
+| `failed: I2C error N` | Reading the sensor failed (N is the error number, e.g. 19 = no answer, 116 = timeout) |
+| `failed: saving failed` | Writing `mpu_calibration.json` failed |
+| `MPU not found` | The sensor (or its magnetometer) does not answer on I2C; it is set up again at the start of every calibration |
 
 ### Stored result
 
@@ -111,22 +112,28 @@ The result is saved to `mpu_calibration.json` and loaded on every start, so it s
 restart:
 
 ```json
-{"mag_offset": [x, y, z], "mag_scale": [x, y, z], "acc_bias": [x, y, z], "level": [pitch, roll]}
+{"mag_offset": [x, y, z], "mag_scale": [x, y, z], "acc_bias": [x, y, z], "camper_level": [pitch, roll]}
 ```
 
-`mag_offset` is in µT, `acc_bias` in m/s² and `level` in degrees. The file exists only on the device: erasing the
+`mag_offset` is in µT, `acc_bias` in m/s² and `camper_level` in degrees. The file exists only on the device: erasing the
 flash removes the calibration, copying the `.py` files does not.
 
 ### Mounting orientation
 
-The calibration is done lying flat (sensor Z up), but the device is mounted upright, turned
-90° around the sensor X axis: sensor Y points up, where Z was, and sensor Z points where -Y was.
-`MPU.get_rotation()` undoes this rotation, so pitch and roll are 0 in the mounted position and
-the angles are the ones the device would give lying flat. As a result, the angles of a device
-lying flat on a desk are not meaningful.
+The calibration is done lying flat (sensor Z up) and its values are measured and applied in the
+sensor's own axes, so they do not depend on the mounting.
 
-The calibration values are measured and applied in the sensor's own axes, so they do not depend
-on the mounting.
+The angles are computed in the camper's axes: x forward, y to the left side, z up. On the front
+panel the sensor is mounted with Z towards the rear of the camper, Y towards the floor and X
+towards the left side (`MPU._to_camper()`; change it there if the mounting changes).
+`MPU.get_rotation()` returns:
+
+- pitch: > 0 when the front is higher than the rear,
+- roll: > 0 when the right side is lower than the left,
+- heading: where the front points, 0-360° clockwise from magnetic north (not true north),
+  tilt-compensated with the accelerometer.
+
+Pitch and roll are relative to the level set with `LEVEL` (below); the heading is not.
 
 ### Level
 
@@ -135,6 +142,7 @@ never perfectly level (its tilt ends up in the accelerometer bias). To correct b
 vehicle level after the device is mounted, open the menu, turn to `LEVEL` and press the encoder:
 the current pitch and roll are stored as zero and subtracted from the reported angles. Yaw is
 not affected. The level is kept when the MPU is calibrated again; it needs a calibrated MPU.
+A level saved by older firmware (key `level`, other axes) is ignored: set it again.
 
 ## Development
 

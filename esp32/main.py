@@ -51,6 +51,10 @@ async def mpu_sensor_task():
                 pitch, roll, yaw = mpu.get_rotation()
                 await ble.write_characteristic_multiple(
                     "MPU_SENSOR", (pitch, roll, yaw), '<3f')
+            else:
+                # Still check that the sensor answers, so a lost one is noticed and set up again
+                mpu.mpu.acceleration
+                mpu.mpu.magnetic
         except Exception as e:
             print(f"Error in MPU task: {e}")
             mpu.mpu = None

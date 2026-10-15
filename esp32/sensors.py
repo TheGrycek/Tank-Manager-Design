@@ -1,7 +1,7 @@
 import asyncio
 import json
 import time
-from math import log, pow, atan2, sqrt, degrees, cos, sin
+from math import log, pow, atan2, sqrt, degrees
 
 from machine import Pin, I2C, ADC
 
@@ -100,6 +100,7 @@ class MPU:
     _FLAT_HOLD_MS = 3000  # and how long it must then stay flat
     _FLAT_MAX_ACC = 1.5  # m/s^2 on X and Y, above this the device is not lying flat
     _LEVEL_SAMPLES = 16  # accelerometer readings averaged when the level is set
+    _CALIBRATION_RECOVERIES = 5  # how often the sensor may be set up again during one calibration
 
     def __init__(self):
         self._MPU_I2C_SCL_PIN = Pin(22)
@@ -108,7 +109,7 @@ class MPU:
         self.i2c = None
         self.mpu = None
         self._acc_bias = (0.0, 0.0, 0.0)
-        # Pitch and roll (degrees) of the mounted device with the vehicle standing level, set from the menu
+        # Pitch and roll (degrees) measured with the camper standing level, set from the menu (SET ZERO)
         self._level = (0.0, 0.0)
         # False until a calibration is loaded from the file or done from the menu: angles are not reported then
         self.calibrated = False
@@ -129,8 +130,9 @@ class MPU:
             print("MPU9250 id: " + hex(self.mpu.whoami))
             self._load_calibration()
             return self.mpu
-        except OSError:
-            print("Error: MPU not found")
+        except (OSError, RuntimeError) as e:
+            # RuntimeError: the MPU answers but its magnetometer (AK8963) does not
+            print("Error: MPU not found:", e)
             self.mpu = None
             return None
 
@@ -143,7 +145,8 @@ class MPU:
             self.mpu.ak8963._scale = tuple(data["mag_scale"])
             # Accelerometer bias (m/s^2), missing in files saved by the magnetometer-only calibration
             self._acc_bias = tuple(data.get("acc_bias", (0.0, 0.0, 0.0)))
-            self._level = tuple(data.get("level", (0.0, 0.0)))
+            # "camper_level": angles in the camper axes; an older "level" (other axes) is dropped
+            self._level = tuple(data.get("camper_level", (0.0, 0.0)))
             self.calibrated = True
             print("MPU calibration loaded")
         except (OSError, ValueError, KeyError):
@@ -154,7 +157,7 @@ class MPU:
         ak = self.mpu.ak8963
         with open(self._CALIBRATION_FILE, "w") as f:
             json.dump({"mag_offset": ak._offset, "mag_scale": ak._scale, "acc_bias": self._acc_bias,
-                       "level": self._level}, f)
+                       "camper_level": self._level}, f)
 
     def start_calibration(self):
         """Starts the calibration in the background (the panel menu); returns its task.
@@ -164,13 +167,16 @@ class MPU:
         return asyncio.create_task(self._calibrate())
 
     async def _calibrate(self):
-        if self.mpu is None:
+        # Start from a fresh init: the sensor may have been unplugged or reset since the start-up,
+        # which nothing notices while it is not calibrated
+        if self.configure() is None:
             self.calibration_screen = ("", "MPU not found", "", "")
             self.calibrating = False
             return
         ak = self.mpu.ak8963
         old_mag = (ak._offset, ak._scale)
         old_acc_bias = self._acc_bias
+        self._recoveries = 0
         error = "sensor error"
         try:
             # Raw magnetometer readings while measuring
@@ -184,24 +190,51 @@ class MPU:
                 if acc_bias is None:
                     error = "not laid flat"
                 else:
-                    ak._offset, ak._scale = mag
+                    self.mpu.ak8963._offset, self.mpu.ak8963._scale = mag
                     self._acc_bias = acc_bias
-                    self._save_calibration()
-                    self.calibrated = True
-                    print("MPU calibration saved:", mag, acc_bias)
-                    error = None
+                    try:
+                        self._save_calibration()
+                        self.calibrated = True
+                        print("MPU calibration saved:", mag, acc_bias)
+                        error = None
+                    except OSError as e:
+                        print("Saving the MPU calibration failed:", e)
+                        error = "saving failed"
         except OSError as e:
             print("MPU calibration error:", e)
+            error = f"I2C error {e.args[0] if e.args else ''}"
         finally:
             # Also when cancelled from the menu: keep the previous calibration
             if error is not None:
-                ak._offset, ak._scale = old_mag
+                self.mpu.ak8963._offset, self.mpu.ak8963._scale = old_mag
                 self._acc_bias = old_acc_bias
             self.calibrating = False
         if error is None:
             self.calibration_screen = ("", "Calibration", "saved", "")
         else:
             self.calibration_screen = ("", "Calibration", "failed:", error)
+
+    async def _read(self, name):
+        """A reading during the calibration. A sensor that lost power for a moment (a loose wire)
+        comes back with its reset defaults, magnetometer access off: set it up again and go on."""
+        while True:
+            try:
+                return getattr(self.mpu, name)
+            except OSError as e:
+                if self._recoveries >= self._CALIBRATION_RECOVERIES:
+                    raise
+                self._recoveries += 1
+                print("MPU read failed, setting the sensor up again:", e)
+                # Wait a bit longer each time for the contact to come back (3 s in total)
+                await asyncio.sleep_ms(200 * self._recoveries)
+                ak = self.mpu.ak8963
+                try:
+                    self.mpu = MPU9250(self.i2c)
+                except (OSError, RuntimeError) as e2:
+                    print("MPU set-up failed:", e2)
+                    continue
+                # Keep the magnetometer correction in force (raw while measuring)
+                self.mpu.ak8963._offset, self.mpu.ak8963._scale = ak._offset, ak._scale
 
     async def _calibrate_magnetometer(self):
         """Hard/soft iron correction (offset, scale) from the extremes seen while the device is rotated,
@@ -214,7 +247,7 @@ class MPU:
             if left <= 0:
                 break
             self.calibration_screen = ("1/2", "Rotate the", "device", f"{left // 1000 + 1} s")
-            reading = self.mpu.magnetic
+            reading = await self._read("magnetic")
             # All zeros = no measurement ready yet
             if reading[0] or reading[1] or reading[2]:
                 for i in range(3):
@@ -239,7 +272,7 @@ class MPU:
         count = 0
         while time.ticks_diff(time.ticks_ms(), start) < self._FLAT_TIMEOUT_MS:
             now = time.ticks_ms()
-            reading = self.mpu.acceleration
+            reading = await self._read("acceleration")
             if abs(reading[0]) > self._FLAT_MAX_ACC or abs(reading[1]) > self._FLAT_MAX_ACC:
                 # Not flat (yet, or moved): start over
                 flat_since = None
@@ -259,54 +292,84 @@ class MPU:
             await asyncio.sleep_ms(50)
         return None
 
-    def set_level(self):
+    async def set_level(self):
         """Takes the current pitch and roll as zero (the menu, with the vehicle standing level).
         Returns the lines for the display: (step, line, line, line)"""
-        if self.mpu is None:
+        if self.calibrating:
+            return "", "Calibrate the", "MPU first", ""
+        # The MPU task drops a sensor that failed a reading and sets it up again only a little
+        # later: do it now instead of reporting it missing
+        if self.mpu is None and self.configure() is None:
             return "", "MPU not found", "", ""
-        if not self.calibrated or self.calibrating:
+        if not self.calibrated:
             return "", "Calibrate the", "MPU first", ""
         old_level = self._level
+        # Keeps the MPU task away while the sensor may be set up again
+        self.calibrating = True
+        self._recoveries = 0
         try:
             total = [0.0, 0.0, 0.0]
             for _ in range(self._LEVEL_SAMPLES):
-                acc = self._mounted_acceleration()
+                acc = self._camper_acceleration(await self._read("acceleration"))
                 for i in range(3):
                     total[i] += acc[i]
-            roll, pitch = self._tilt(*total)
-            self._level = (degrees(pitch), degrees(roll))
-            self._save_calibration()
+            self._level = self._tilt(*total)
         except OSError as e:
             print("Setting the level failed:", e)
             self._level = old_level
-            return "", "Level", "failed:", "sensor error"
+            return "", "Level", "failed:", f"I2C error {e.args[0] if e.args else ''}"
+        finally:
+            self.calibrating = False
+        try:
+            self._save_calibration()
+        except OSError as e:
+            print("Saving the level failed:", e)
+            self._level = old_level
+            return "", "Level", "failed:", "saving failed"
         print("MPU level saved:", self._level)
         return "", "Level", "saved", ""
 
-    def _mounted_acceleration(self):
-        acc = self.mpu.acceleration
+    @staticmethod
+    def _to_camper(v):
+        """Sensor axes -> camper axes: x forward, y to the left side, z up.
+        Mounted on the front panel with sensor Z towards the rear of the camper, Y towards the
+        floor and X towards the left side."""
+        return -v[2], v[0], -v[1]
+
+    def _camper_acceleration(self, acc):
         acc = (acc[0] - self._acc_bias[0], acc[1] - self._acc_bias[1], acc[2] - self._acc_bias[2])
-        # The device is calibrated lying flat but mounted upright, turned 90 degrees around X:
-        # sensor Y points up (where Z was) and sensor Z points where -Y was. Undo that rotation,
-        # so the angles are the ones the device would give lying flat (0 pitch and roll when mounted)
-        return acc[0], -acc[2], acc[1]
+        # At rest the accelerometer measures +g along the upward direction
+        return self._to_camper(acc)
 
     @staticmethod
     def _tilt(ax, ay, az):
-        """Roll and pitch in radians"""
-        return atan2(ay, az), atan2(-ax, sqrt((ay ** 2) + (az ** 2)))
+        """Pitch (> 0: front up) and roll (> 0: right side down) in degrees, from the measured
+        upward direction in the camper axes"""
+        return degrees(atan2(ax, sqrt(ay * ay + az * az))), degrees(atan2(ay, az))
+
+    @staticmethod
+    def _cross(a, b):
+        return a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]
+
+    @staticmethod
+    def _unit(v):
+        n = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+        return v[0] / n, v[1] / n, v[2] / n
 
     def get_rotation(self):
-        ax, ay, az = self._mounted_acceleration()
+        """Pitch and roll relative to SET ZERO, and the heading of the camper's front in degrees
+        clockwise from magnetic north (0-360)"""
+        up = self._camper_acceleration(self.mpu.acceleration)
         raw_mx, raw_my, raw_mz = self.mpu.magnetic
-        # Magnetometer axes expressed in the accelerometer frame
-        mag = (raw_my, raw_mx, -raw_mz)
-        # The same rotation to the mounted position as for the accelerometer
-        mx, my, mz = mag[0], -mag[2], mag[1]
+        # Magnetometer axes expressed in the accelerometer frame, then in the camper axes
+        mag = self._to_camper((raw_my, raw_mx, -raw_mz))
 
-        roll, pitch = self._tilt(ax, ay, az)
-        bx = (mx * cos(pitch)) + (sin(pitch) * ((my * sin(roll)) + (mz * cos(roll))))
-        by = (mz * sin(roll)) - (my * cos(roll))
-        yaw = atan2(-by, bx)
-        # Pitch and roll are reported relative to the level set from the menu
-        return degrees(pitch) - self._level[0], degrees(roll) - self._level[1], degrees(yaw)
+        pitch, roll = self._tilt(*up)
+        pitch -= self._level[0]
+        roll = (roll - self._level[1] + 180) % 360 - 180
+
+        # Horizontal east and north in the camper axes; the heading is where the front (x) points
+        east = self._unit(self._cross(mag, up))
+        north = self._unit(self._cross(up, east))
+        heading = degrees(atan2(east[0], north[0])) % 360
+        return pitch, roll, heading
