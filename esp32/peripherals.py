@@ -99,23 +99,28 @@ class Valve:
         # What the app shows: 1 when open or opening, 0 when closed or closing
         return 1 if self._STATE in (1, 3) else 0
 
-    async def _run_valve(self, state):
+    async def _set_state(self, state, ble):
+        self._STATE = state
+        # The app shows the movement (closing / opening) as well
+        await ble.write_characteristic("VALVE_STATE", state, '<B')
+
+    async def _run_valve(self, state, ble):
         try:
             # Ensure both pins are off first
             self.stop()
 
             if state == 1:
                 self._OPEN_PIN.value(1)
-                self._STATE = 3
                 print("Valve OPENING")
+                await self._set_state(3, ble)
                 await asyncio.sleep(self.MOVE_TIME_SEC)
-                self._STATE = 1
+                await self._set_state(1, ble)
             else:
                 self._CLOSE_PIN.value(1)
-                self._STATE = 2
                 print("Valve CLOSING")
+                await self._set_state(2, ble)
                 await asyncio.sleep(self.MOVE_TIME_SEC)
-                self._STATE = 0
+                await self._set_state(0, ble)
 
         except asyncio.CancelledError:
             print("Valve movement cancelled")
@@ -136,10 +141,10 @@ class Valve:
         self._auto_close_task = None
         if self._STATE in (1, 3):
             print("Auto-closing valve after timeout")
-            await self._start_valve_task(0)
+            await self._start_valve_task(0, ble)
             await ble.write_characteristic("VALVE", 0, '<B')
 
-    async def _start_valve_task(self, state, ble=None):
+    async def _start_valve_task(self, state, ble):
         # Cancel active movement
         if self._move_task is not None:
             self._move_task.cancel()
@@ -154,17 +159,17 @@ class Valve:
             self._auto_close_task = None
 
         # Start valve movement
-        self._move_task = asyncio.create_task(self._run_valve(state))
+        self._move_task = asyncio.create_task(self._run_valve(state, ble))
 
         # If opening, schedule auto-close
-        if state == 1 and ble is not None:
+        if state == 1:
             self._auto_close_task = asyncio.create_task(self._auto_close(ble))
 
-    async def close_on_start(self):
+    async def close_on_start(self, ble):
         """After a reset the real position is unknown (the valve may have been left open): drive it
         closed, the limit switch stops the motor if it already is"""
         print("Closing the valve after start-up")
-        await self._start_valve_task(0)
+        await self._start_valve_task(0, ble)
 
     async def request(self, state, ble):
         """Open (1) or close (0) the valve; used by the app command and by the panel menu"""

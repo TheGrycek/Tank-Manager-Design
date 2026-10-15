@@ -162,7 +162,7 @@ async def main():
     heater.configure()
     buzzer.configure()
     settings.load()
-    await valve.close_on_start()
+    await valve.close_on_start(ble)
 
     tasks = [
         asyncio.create_task(ble.advertise()),

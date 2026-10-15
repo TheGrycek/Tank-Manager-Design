@@ -73,7 +73,7 @@ then crashes at start-up (`BLE_INIT: hci inits failed`).
 | Gray tank temperature | `...0003` | `int16`, 0.01 °C, -32768 = sensor fault | read, notify |
 | MPU | `...0004` | 3 x `float32`: pitch, roll, yaw in degrees | read, notify |
 | Valve | `...0005` | `uint8`, 1 = open, 0 = closed | read, write, notify, indicate |
-| Valve locked | `...0006` | `uint8`, always 0 | read, notify, indicate |
+| Valve state | `...0006` | `uint8`, 0 = closed, 1 = open, 2 = closing, 3 = opening | read, notify, indicate |
 | Heater | `...0007` | `uint8`, 1 = on | read, notify, indicate |
 | Settings | `...0008` | 4 x `uint8`: buzzer, gray level threshold, auto-heating, heating threshold | read, write, notify |
 

@@ -222,9 +222,9 @@ class Menu:
 
 class Bluetooth:
     # Characteristics the app must always see up to date: indicated on change, re-sent periodically
-    _STATE_CHARACTERISTICS = ("VALVE", "VALVE_LOCKED", "HEATER")
+    _STATE_CHARACTERISTICS = ("VALVE", "VALVE_STATE", "HEATER")
     _CHARACTERISTIC_ORDER = ("CLEAN_LEVEL_SENSOR", "GRAY_LEVEL_SENSOR", "GRAY_TEMP_SENSOR", "MPU_SENSOR",
-                             "VALVE", "VALVE_LOCKED", "HEATER", "SETTINGS")
+                             "VALVE", "VALVE_STATE", "HEATER", "SETTINGS")
 
     def __init__(self, settings, valve, heater):
         self._settings = settings
@@ -240,7 +240,7 @@ class Bluetooth:
             "GRAY_TEMP_SENSOR": bluetooth.UUID('00000000-0000-0000-0000-000000000003'),
             "MPU_SENSOR": bluetooth.UUID('00000000-0000-0000-0000-000000000004'),
             "VALVE": bluetooth.UUID('00000000-0000-0000-0000-000000000005'),
-            "VALVE_LOCKED": bluetooth.UUID('00000000-0000-0000-0000-000000000006'),
+            "VALVE_STATE": bluetooth.UUID('00000000-0000-0000-0000-000000000006'),
             "HEATER": bluetooth.UUID('00000000-0000-0000-0000-000000000007'),
             "SETTINGS": bluetooth.UUID('00000000-0000-0000-0000-000000000008'),
         }
@@ -401,8 +401,8 @@ class Bluetooth:
         # Cheap periodic re-send (no acknowledgement) so that an app which subscribed late,
         # e.g. after a reconnect, still gets the current state
         await self.write_characteristic("VALVE", self._valve.get_target(), '<B', indicate=False)
-        # VALVE_LOCKED is kept for the app protocol; there is no physical valve button any more
-        await self.write_characteristic("VALVE_LOCKED", 0, '<B', indicate=False)
+        # Actual state, including the movement: 0 closed, 1 open, 2 closing, 3 opening
+        await self.write_characteristic("VALVE_STATE", self._valve.get_state(), '<B', indicate=False)
         await self.write_characteristic("HEATER", self._heater.get_state(), '<B', indicate=False)
         await self.send_settings()
 
@@ -433,7 +433,7 @@ class Bluetooth:
                             self.passkey = None
 
                     await self.write_characteristic("VALVE", self._valve.get_target(), '<B')
-                    await self.write_characteristic("VALVE_LOCKED", 0, '<B')
+                    await self.write_characteristic("VALVE_STATE", self._valve.get_state(), '<B')
                     await self.write_characteristic("HEATER", self._heater.get_state(), '<B')
                     await self.send_settings()
                     await connection.disconnected()
