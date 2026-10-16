@@ -5476,7 +5476,7 @@
 		)
 		(uuid "0bccb7e7-dc19-462b-a156-abd4867ddd6b")
 	)
-	(text "J5: clean tank level"
+	(text "J5: clean tank level, 0-190 Ohm"
 		(exclude_from_sim no)
 		(at 378.206 141.224 0)
 		(effects
@@ -5612,7 +5612,7 @@
 		)
 		(uuid "4ca0e726-cd06-4eda-9b5f-f8dccc8bdfa4")
 	)
-	(text "J2: gray tank level"
+	(text "J2: gray tank level, 0-190 Ohm"
 		(exclude_from_sim no)
 		(at 300.482 141.478 0)
 		(effects

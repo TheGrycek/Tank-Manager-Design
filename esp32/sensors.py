@@ -33,21 +33,24 @@ class LevelSensor:
         v = min(max(v, 0.0), self._MAX_V - 1e-6)
         r_sensor = self._R_DIVIDER * v / (self._MAX_V - v)
         level = (r_sensor - self._R_EMPTY) / (self._R_FULL - self._R_EMPTY) * self._MAX_LVL
-        return int(min(max(level, 0), self._MAX_LVL))
+        return int(min(max(round(level), 0), self._MAX_LVL))
+
+
+# Float sensors IG-0190FM (0-190 Ohm): about 0 Ohm with the tank empty, measured 186 Ohm when full
+LEVEL_R_EMPTY = 0.0
+LEVEL_R_FULL = 186.0
 
 
 class GrayLevelSensor(LevelSensor):
     """Gray water tank level sensor"""
     def __init__(self):
-        # TODO: calibrate - sensor resistance with the tank empty / full (measure it)
-        super().__init__(34, r_empty=0.0, r_full=190.0)
+        super().__init__(34, r_empty=LEVEL_R_EMPTY, r_full=LEVEL_R_FULL)
 
 
 class CleanLevelSensor(LevelSensor):
     """Clean water tank level sensor"""
     def __init__(self):
-        # TODO: calibrate - sensor resistance with the tank empty / full (measure it)
-        super().__init__(35, r_empty=0.0, r_full=190.0)
+        super().__init__(35, r_empty=LEVEL_R_EMPTY, r_full=LEVEL_R_FULL)
 
 
 class TemperatureSensor:
@@ -113,6 +116,8 @@ class MPU:
         self._level = (0.0, 0.0)
         # False until a calibration is loaded from the file or done from the menu: angles are not reported then
         self.calibrated = False
+        # Last acceleration read by get_rotation(), in the camper axes (m/s^2)
+        self.acceleration = (0.0, 0.0, 0.0)
         # True while the calibration runs: readings are raw then and must not be used
         self.calibrating = False
         # What the display shows during the calibration: (step, line, line, line)
@@ -360,6 +365,8 @@ class MPU:
         """Pitch and roll relative to SET ZERO, and the heading of the camper's front in degrees
         clockwise from magnetic north (0-360)"""
         up = self._camper_acceleration(self.mpu.acceleration)
+        # Kept for the motion detection of the history
+        self.acceleration = up
         raw_mx, raw_my, raw_mz = self.mpu.magnetic
         # Magnetometer axes expressed in the accelerometer frame, then in the camper axes
         mag = self._to_camper((raw_my, raw_mx, -raw_mz))

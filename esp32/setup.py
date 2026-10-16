@@ -244,12 +244,15 @@ class Bluetooth:
     # Characteristics the app must always see up to date: indicated on change, re-sent periodically
     _STATE_CHARACTERISTICS = ("VALVE", "VALVE_STATE", "HEATER")
     _CHARACTERISTIC_ORDER = ("CLEAN_LEVEL_SENSOR", "GRAY_LEVEL_SENSOR", "GRAY_TEMP_SENSOR", "MPU_SENSOR",
-                             "VALVE", "VALVE_STATE", "HEATER", "SETTINGS")
+                             "VALVE", "VALVE_STATE", "HEATER", "SETTINGS", "HISTORY")
+    # Largest ATT MTU accepted: a history packet then carries 29 samples instead of one
+    _MTU = 247
 
-    def __init__(self, settings, valve, heater):
+    def __init__(self, settings, valve, heater, history):
         self._settings = settings
         self._valve = valve
         self._heater = heater
+        self._history = history
         self._ADV_INTERVAL_US = 250000
         self._PAIR_TIMEOUT_MS = 60000  # time for the user to type the code shown on the display
         self._BT_NAME = "Mati&Mati"
@@ -263,6 +266,7 @@ class Bluetooth:
             "VALVE_STATE": bluetooth.UUID('00000000-0000-0000-0000-000000000006'),
             "HEATER": bluetooth.UUID('00000000-0000-0000-0000-000000000007'),
             "SETTINGS": bluetooth.UUID('00000000-0000-0000-0000-000000000008'),
+            "HISTORY": bluetooth.UUID('00000000-0000-0000-0000-000000000009'),
         }
         self.characteristics = {}
         # Pairing code currently shown on the display, None when no pairing is in progress
@@ -270,6 +274,7 @@ class Bluetooth:
 
     def configure(self):
         aioble.config(gap_name=self._BT_NAME, bond=True, mitm=True, le_secure=True, io=0)
+        aioble.config(mtu=self._MTU)
         ble_service = aioble.Service(self._MANAGER_SERVICE_UUID)
 
         _FLAG_READ_AUTHENTICATED = 0x0400
@@ -284,7 +289,7 @@ class Bluetooth:
                     notify=True, indicate=True
                 )
                 self.characteristics[name].flags |= (_FLAG_READ_AUTHENTICATED | _FLAG_WRITE_AUTHENTICATED)
-            elif name == "SETTINGS":
+            elif name in ("SETTINGS", "HISTORY"):
                 self.characteristics[name] = aioble.Characteristic(
                     ble_service, self.characteristic_uuids[name], read=True, write=True, capture=True,
                     notify=True
@@ -406,6 +411,37 @@ class Bluetooth:
                         print(f"Indicate failed for {name}: {e}")
                 else:
                     self.characteristics[name].notify(conn, encoded_data)
+
+    async def send_history(self, connection, from_seq):
+        """Sends the history samples from from_seq on as notifications of HISTORY: packets of
+        <I first seq, B count> + count records, then an end packet with count 0 and the next seq.
+        Returns the next seq, i.e. what the app has after this."""
+        h = self._history
+        if from_seq > h.next_seq:
+            # The app knows samples this controller no longer has (history file recreated): send all
+            from_seq = 0
+        seq = max(from_seq, h.oldest_seq())
+        per_packet = max(1, ((connection.mtu or 23) - 3 - 5) // h.RECORD_SIZE)
+        while seq < h.next_seq:
+            count = min(per_packet, h.next_seq - seq)
+            if not await self._notify_paced("HISTORY", connection, struct.pack("<IB", seq, count) + h.read(seq, count)):
+                return seq
+            seq += count
+        await self._notify_paced("HISTORY", connection, struct.pack("<IB", seq, 0))
+        return seq
+
+    async def _notify_paced(self, name, connection, data):
+        # The controller has few buffers for outgoing packets: wait and retry when they are full
+        for _ in range(100):
+            if not connection.is_connected():
+                return False
+            try:
+                self.characteristics[name].notify(connection, data)
+                await asyncio.sleep_ms(5)
+                return True
+            except OSError:
+                await asyncio.sleep_ms(20)
+        return False
 
     async def write_characteristic_multiple(self, name, data_tuple, fmt):
         encoded_data = struct.pack(fmt, *data_tuple)

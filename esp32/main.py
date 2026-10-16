@@ -1,4 +1,5 @@
 import asyncio
+import struct
 import time
 
 from machine import WDT, reset
@@ -13,6 +14,7 @@ aioble.core.ensure_active()
 from peripherals import OLED, Valve, Heater, Buzzer, Encoder
 from sensors import MPU, GrayLevelSensor, CleanLevelSensor, TemperatureSensor
 from setup import Settings, Menu, Bluetooth
+from history import History
 
 
 # Hardware watchdog timeout in ms, 0 = disabled.
@@ -29,7 +31,8 @@ heater = Heater()
 valve = Valve()
 buzzer = Buzzer()
 settings = Settings()
-ble = Bluetooth(settings, valve, heater)
+history = History()
+ble = Bluetooth(settings, valve, heater, history)
 encoder = Encoder()
 menu = Menu(settings, valve, ble, mpu)
 # Latest sensor readings, shared between the sensor task and the display task
@@ -49,6 +52,7 @@ async def mpu_sensor_task():
             if mpu.calibrated:
                 # Without a calibration the angles are wrong, so nothing is sent to the app
                 pitch, roll, yaw = mpu.get_rotation()
+                history.add_motion(mpu.acceleration, pitch, roll)
                 await ble.write_characteristic_multiple(
                     "MPU_SENSOR", (pitch, roll, yaw), '<3f')
             else:
@@ -82,6 +86,7 @@ async def environmental_sensors_task():
             readings["gray"] = gray_lvl
             readings["clean"] = clean_lvl
             readings["temp"] = temp_celsius
+            history.add_reading(gray_lvl, clean_lvl, temp_celsius)
             if settings.fill_mode_expired():
                 settings.update(fill_mode=False)
                 print("Fill mode off after", Settings.FILL_MODE_MAX_MS // 60000, "min")
@@ -114,6 +119,34 @@ async def settings_task():
         except Exception as e:
             print(f"Error in settings task: {e}")
             await asyncio.sleep_ms(200)
+
+async def history_task():
+    # The app writes <I first seq it lacks, I Unix time>; the samples go back as notifications.
+    # Later samples are pushed to the same connection as they are taken.
+    characteristic = ble.characteristics["HISTORY"]
+    connection = None
+    sent_upto = 0
+    while True:
+        try:
+            try:
+                connection, data = await characteristic.written(timeout_ms=1000)
+                if data is None or len(data) < 8:
+                    print(f"Ignoring invalid history request: {data}")
+                    continue
+                from_seq, unix = struct.unpack("<II", data)
+                history.set_time(unix)
+                sent_upto = await ble.send_history(connection, from_seq)
+                print("History sent from", from_seq, "to", sent_upto)
+            except asyncio.TimeoutError:
+                if connection is not None and not connection.is_connected():
+                    connection = None
+                if connection is not None and history.next_seq > sent_upto:
+                    sent_upto = await ble.send_history(connection, sent_upto)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"Error in history task: {e}")
+            await asyncio.sleep_ms(500)
 
 async def ui_task():
     # The only task that draws on the display: pairing code > calibration > menu > tank screen
@@ -172,6 +205,7 @@ async def main():
     heater.configure()
     buzzer.configure()
     settings.load()
+    history.configure()
     await valve.close_on_start(ble)
 
     tasks = [
@@ -181,6 +215,7 @@ async def main():
         asyncio.create_task(heater.control(temp_sensor, ble, settings)),
         asyncio.create_task(valve.control(ble)),
         asyncio.create_task(settings_task()),
+        asyncio.create_task(history_task()),
         asyncio.create_task(ui_task()),
         asyncio.create_task(buzzer.run()),
     ]

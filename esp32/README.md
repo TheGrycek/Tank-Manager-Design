@@ -14,19 +14,20 @@ Runs on a generic ESP32 with MicroPython 1.25.
 | `sensors.py` | `LevelSensor`, `TemperatureSensor`, `MPU` |
 | `peripherals.py` | `OLED`, `Valve`, `Heater`, `Buzzer`, `Encoder` |
 | `setup.py` | `Settings`, `Menu`, `Bluetooth` |
+| `history.py` | `History`: level history for the app |
 | `mpu9250.py`, `mpu6500.py`, `ak8963.py` | MPU9250 driver |
 | `sh1106.py` | OLED driver |
 | `aioble/` | Bluetooth LE library |
 
 Files created on the device: `settings.json` (user settings), `mpu_calibration.json`
-(MPU calibration) and `ble_secrets.json` (Bluetooth bonds).
+(MPU calibration), `ble_secrets.json` (Bluetooth bonds) and `history.bin` (level history, 35 KB).
 
 ## Components
 
 | Component | Class | Pins | Notes |
 | --- | --- | --- | --- |
-| Gray tank level sensor | `GrayLevelSensor` | ADC 34 | Resistive, 200 Ω divider to 3.3 V |
-| Clean tank level sensor | `CleanLevelSensor` | ADC 35 | Resistive, 200 Ω divider to 3.3 V |
+| Gray tank level sensor | `GrayLevelSensor` | ADC 34 | Float sensor IG-0190FM, 0 Ω empty to 186 Ω full, 200 Ω divider to 3.3 V |
+| Clean tank level sensor | `CleanLevelSensor` | ADC 35 | Float sensor IG-0190FM, 0 Ω empty to 186 Ω full, 200 Ω divider to 3.3 V |
 | Gray tank temperature sensor | `TemperatureSensor` | ADC 32 | NTC 10k, 10 kΩ divider to 3.3 V |
 | MPU9250 (accelerometer, magnetometer) | `MPU` | I2C: SCL 22, SDA 21 | Pitch, roll and yaw of the device |
 | OLED 128x64, SH1106 | `OLED` | I2C: SCL 18, SDA 19 | Address 0x3C |
@@ -35,8 +36,12 @@ Files created on the device: `settings.json` (user settings), `mpu_calibration.j
 | Buzzer | `Buzzer` | 26 | Gray tank overfill alarm, a double beep every second; in the clean tank fill mode beeps that come faster as the tank fills (silent up to 5 %, continuous from 95 %) |
 | EC12 rotary encoder with button | `Encoder` | A 17, B 23, SW 5 | Internal pull-ups, active low |
 
-The level sensors are not calibrated yet: the resistances for an empty and a full tank
-(`r_empty`, `r_full` in `sensors.py`) are placeholders.
+The level is mapped linearly between the sensor resistance with the tank empty and full
+(`LEVEL_R_EMPTY`, `LEVEL_R_FULL` in `sensors.py`: 0 Ω and the measured 186 Ω). The voltage on the
+ADC is then 0-1.6 V.
+The float (30 cm sensors) does not reach the bottom of the tank, so the percentage is that of the
+float travel, not of the tank volume: 0 % means the float rests at its lowest point and some water
+is still left below it.
 
 ### Display and menu
 
@@ -77,6 +82,31 @@ then crashes at start-up (`BLE_INIT: hci inits failed`).
 | Valve state | `...0006` | `uint8`, 0 = closed, 1 = open, 2 = closing, 3 = opening | read, notify, indicate |
 | Heater | `...0007` | `uint8`, 1 = on | read, notify, indicate |
 | Settings | `...0008` | 5 x `uint8`: buzzer, gray level threshold, auto-heating, heating threshold, fill mode (the app may write only the first 4) | read, write, notify |
+| History | `...0009` | written: `<I` first sample wanted, `<I` Unix time; notified: `<I` first sample, `uint8` count, count x (`<I` time, `uint8` gray (bit 7: driving), `uint8` clean (bit 7: tilted), `<h` temperature x 100), a packet with count 0 ends a transfer | write, notify |
+
+### History
+
+`History` stores one sample every 10 minutes (the average of the readings in that time: both
+levels and the gray tank temperature) in `history.bin`, a ring buffer of 30 days (4320 samples of
+8 bytes). Samples are numbered, so the app downloads only the ones it does not have: it writes the
+first number it lacks together with the current time, and the controller answers with packets of
+up to 29 samples (the app asks for an ATT MTU of 247; with the default MTU one sample per packet),
+then an end packet. Samples taken later during the connection are pushed as they come. If the app
+asks for a number the controller does not have yet (history file recreated), everything is sent.
+
+The controller does not know the date: it learns it from the app's request. Samples taken before
+that carry the seconds since start-up with the top bit of the time set; the ones of the current
+start-up are dated when the time arrives, older ones (from before a restart without a phone) stay
+undated and the app skips them. Every app connection sends the time; after the first one only
+corrections of up to 10 min are taken (clock drift), so a phone or tablet with a wrong clock cannot
+misdate the samples.
+
+While driving the water sloshes and on a slope it lies at a slant, so the level sensors read wrong.
+A sample is flagged as driving (top bit of the gray level byte) when the acceleration changed by
+more than 1 m/s^2 between two MPU readings (1 s apart) at least 5 times in it, and as tilted (top
+bit of the clean level byte) when the average pitch or roll was beyond 3 degrees
+(`History.MOTION_DELTA`, `MOTION_COUNT`, `TILT_DEG`; to be tuned on the road). The app draws such
+samples faint and leaves them out of its statistics. Without a calibrated MPU nothing is flagged.
 
 ## MPU calibration
 
