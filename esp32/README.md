@@ -32,7 +32,7 @@ Files created on the device: `settings.json` (user settings), `mpu_calibration.j
 | OLED 128x64, SH1106 | `OLED` | I2C: SCL 18, SDA 19 | Address 0x3C |
 | Electric valve | `Valve` | open 13, close 27, current ADC 33 | Moves for 35 s, closes by itself 10 min after opening and after every start-up; the motor current (1 Ω shunt, 1 mV = 1 mA) is logged while moving |
 | Heater | `Heater` | 25 | On at the heating threshold, off 1 °C above it |
-| Buzzer | `Buzzer` | 26 | Gray tank overfill alarm, a double beep every second |
+| Buzzer | `Buzzer` | 26 | Gray tank overfill alarm, a double beep every second; in the clean tank fill mode beeps that come faster as the tank fills (silent up to 5 %, continuous from 95 %) |
 | EC12 rotary encoder with button | `Encoder` | A 17, B 23, SW 5 | Internal pull-ups, active low |
 
 The level sensors are not calibrated yet: the resistances for an empty and a full tank
@@ -50,6 +50,7 @@ encoder opens the menu; turning selects an item and pressing changes it. The men
 | `GRAY LVL THR` | Gray tank level that triggers the alarm, 50-100 % |
 | `AUTO-HEATING` | Heater control on / off |
 | `HEATING THR` | Temperature below which the heater turns on, 1-5 °C |
+| `FILL MODE` | Clean tank fill mode on / off (not kept after a restart, off by itself after 30 min) |
 | `VALVE` | Open / close the valve |
 | `MPU` | Shows `CALIBRATED` or `NOT CALIBRATED`; pressing starts the MPU calibration |
 | `LEVEL` | Take the current pitch and roll as zero |
@@ -75,7 +76,7 @@ then crashes at start-up (`BLE_INIT: hci inits failed`).
 | Valve | `...0005` | `uint8`, 1 = open, 0 = closed | read, write, notify, indicate |
 | Valve state | `...0006` | `uint8`, 0 = closed, 1 = open, 2 = closing, 3 = opening | read, notify, indicate |
 | Heater | `...0007` | `uint8`, 1 = on | read, notify, indicate |
-| Settings | `...0008` | 4 x `uint8`: buzzer, gray level threshold, auto-heating, heating threshold | read, write, notify |
+| Settings | `...0008` | 5 x `uint8`: buzzer, gray level threshold, auto-heating, heating threshold, fill mode (the app may write only the first 4) | read, write, notify |
 
 ## MPU calibration
 

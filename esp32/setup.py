@@ -31,12 +31,17 @@ class Settings:
     GRAY_LVL_STEP = 5
     HEATING_MIN = 1
     HEATING_MAX = 5
+    FILL_MODE_MAX_MS = 30 * 60 * 1000   # fill mode switches itself off after 30 min
+
 
     def __init__(self):
         self.buzzer_on = True
         self.gray_lvl_threshold = 90   # %
         self.auto_heating = True
         self.heating_threshold = 4     # Celsius
+        # Clean tank fill mode: the buzzer tells the level. Not kept in flash, off after a restart
+        self.fill_mode = False
+        self._fill_mode_since = 0
 
     def load(self):
         try:
@@ -60,9 +65,15 @@ class Settings:
         except OSError as e:
             print("Saving settings failed:", e)
 
-    def update(self, buzzer_on=None, gray_lvl_threshold=None, auto_heating=None, heating_threshold=None, save=True):
+    def update(self, buzzer_on=None, gray_lvl_threshold=None, auto_heating=None, heating_threshold=None,
+               fill_mode=None, save=True):
         """Single place where values are validated; out-of-range values are clamped. True if changed."""
         before = self.pack()
+        stored_before = before[:4]
+        if fill_mode is not None:
+            if fill_mode and not self.fill_mode:
+                self._fill_mode_since = time.ticks_ms()
+            self.fill_mode = bool(fill_mode)
         if buzzer_on is not None:
             self.buzzer_on = bool(buzzer_on)
         if gray_lvl_threshold is not None:
@@ -72,14 +83,17 @@ class Settings:
         if heating_threshold is not None:
             self.heating_threshold = min(max(int(heating_threshold), self.HEATING_MIN), self.HEATING_MAX)
         changed = self.pack() != before
-        if changed and save:
+        if save and self.pack()[:4] != stored_before:
             self.save()
         return changed
 
+    def fill_mode_expired(self):
+        return self.fill_mode and time.ticks_diff(time.ticks_ms(), self._fill_mode_since) >= self.FILL_MODE_MAX_MS
+
     def pack(self):
         # BLE payload of the SETTINGS characteristic
-        return struct.pack('<4B', 1 if self.buzzer_on else 0, self.gray_lvl_threshold,
-                           1 if self.auto_heating else 0, self.heating_threshold)
+        return struct.pack('<5B', 1 if self.buzzer_on else 0, self.gray_lvl_threshold,
+                           1 if self.auto_heating else 0, self.heating_threshold, 1 if self.fill_mode else 0)
 
 
 class Menu:
@@ -95,10 +109,11 @@ class Menu:
     GRAY_LVL_THR = 1
     AUTO_HEATING = 2
     HEATING_THR = 3
-    VALVE = 4
-    MPU = 5
-    LEVEL = 6
-    _NAMES = ("BUZZER", "GRAY LVL THR", "AUTO-HEATING", "HEATING THR", "VALVE", "MPU", "LEVEL")
+    FILL_MODE = 4
+    VALVE = 5
+    MPU = 6
+    LEVEL = 7
+    _NAMES = ("BUZZER", "GRAY LVL THR", "AUTO-HEATING", "HEATING THR", "FILL MODE", "VALVE", "MPU", "LEVEL")
 
     def __init__(self, settings, valve, ble, mpu):
         self._settings = settings
@@ -121,6 +136,8 @@ class Menu:
             return "ON" if s.auto_heating else "OFF"
         if self.item == self.HEATING_THR:
             return f"{self._edit_value if self.state == self.EDIT else s.heating_threshold}'C"
+        if self.item == self.FILL_MODE:
+            return "ON" if s.fill_mode else "OFF"
         if self.item == self.MPU:
             return "CALIBRATED" if self._mpu.calibrated else "NOT CALIBRATED"
         if self.item == self.LEVEL:
@@ -192,6 +209,9 @@ class Menu:
                     await self._ble.send_settings()
                 elif self.item == self.AUTO_HEATING:
                     s.update(auto_heating=not s.auto_heating)
+                    await self._ble.send_settings()
+                elif self.item == self.FILL_MODE:
+                    s.update(fill_mode=not s.fill_mode)
                     await self._ble.send_settings()
                 elif self.item == self.VALVE:
                     await self._valve.request(0 if self._valve.get_target() else 1, self._ble)

@@ -289,32 +289,67 @@ class Heater:
 
 
 class Buzzer:
-    """Gray tank overfill alarm: a double beep every second"""
+    """Gray tank overfill alarm (a double beep every second) and the clean tank fill mode (beeps that
+    come faster as the tank fills: silent when empty, a continuous tone when full)"""
     _BEEP_MS = 100
     _GAP_MS = 100
     _PERIOD_MS = 1000
+    # Fill mode: silent up to FILL_EMPTY %, continuous from FILL_FULL %, in between a short beep with
+    # a pause shrinking linearly from FILL_PAUSE_MAX_MS to FILL_PAUSE_MIN_MS
+    FILL_EMPTY = 5
+    FILL_FULL = 95
+    _FILL_BEEP_MS = 60
+    _FILL_PAUSE_MAX_MS = 1200
+    _FILL_PAUSE_MIN_MS = 60
 
     def __init__(self):
         self._BUZZER_PIN = Pin(26, Pin.OUT)
         self._alarm = False
+        self._fill_mode = False
+        self._clean_lvl = 0
 
     def configure(self):
         self.off()
 
     def off(self):
         self._alarm = False
+        self._fill_mode = False
         self._BUZZER_PIN.value(0)
 
-    def control(self, valve_state, gray_lvl, settings):
+    def control(self, valve_state, gray_lvl, clean_lvl, settings):
         # Sound while the gray tank is above the threshold and the valve is still closed
         self._alarm = settings.buzzer_on and valve_state == 0 and gray_lvl > settings.gray_lvl_threshold
+        self._fill_mode = settings.fill_mode
+        self._clean_lvl = clean_lvl
+
+    @classmethod
+    def fill_pause_ms(cls, level):
+        """Pause between the fill mode beeps; None = silent, 0 = continuous"""
+        if level <= cls.FILL_EMPTY:
+            return None
+        if level >= cls.FILL_FULL:
+            return 0
+        fraction = (level - cls.FILL_EMPTY) / (cls.FILL_FULL - cls.FILL_EMPTY)
+        return int(cls._FILL_PAUSE_MAX_MS - fraction * (cls._FILL_PAUSE_MAX_MS - cls._FILL_PAUSE_MIN_MS))
 
     async def run(self):
-        """Plays the beeps while the alarm is on"""
+        """Plays the fill mode beeps or, if it is off, the alarm"""
         pause_ms = self._PERIOD_MS - 2 * self._BEEP_MS - self._GAP_MS
         try:
             while True:
+                if self._fill_mode:
+                    fill_pause = self.fill_pause_ms(self._clean_lvl)
+                    if fill_pause is None or fill_pause == 0:
+                        self._BUZZER_PIN.value(0 if fill_pause is None else 1)
+                        await asyncio.sleep_ms(50)
+                        continue
+                    self._BUZZER_PIN.value(1)
+                    await asyncio.sleep_ms(self._FILL_BEEP_MS)
+                    self._BUZZER_PIN.value(0)
+                    await asyncio.sleep_ms(fill_pause)
+                    continue
                 if not self._alarm:
+                    self._BUZZER_PIN.value(0)
                     await asyncio.sleep_ms(50)
                     continue
                 for gap_ms in (self._GAP_MS, pause_ms):

@@ -82,7 +82,11 @@ async def environmental_sensors_task():
             readings["gray"] = gray_lvl
             readings["clean"] = clean_lvl
             readings["temp"] = temp_celsius
-            buzzer.control(valve.get_state(), gray_lvl, settings)
+            if settings.fill_mode_expired():
+                settings.update(fill_mode=False)
+                print("Fill mode off after", Settings.FILL_MODE_MAX_MS // 60000, "min")
+                await ble.send_settings()
+            buzzer.control(valve.get_state(), gray_lvl, clean_lvl, settings)
 
         except Exception as e:
             print(f"Error in environmental sensors task: {e}")
@@ -99,8 +103,10 @@ async def settings_task():
                 continue
             if data is None or len(data) < 4:
                 print(f"Ignoring invalid settings: {data}")
-            elif settings.update(data[0], data[1], data[2], data[3]):
+            elif settings.update(data[0], data[1], data[2], data[3], data[4] if len(data) > 4 else None):
                 print("Settings changed from the app")
+                # Start or stop the fill mode beeps at once, not with the next sensor reading
+                buzzer.control(valve.get_state(), readings["gray"], readings["clean"], settings)
             # Always answer with the values actually in force (they may have been clamped)
             await ble.send_settings()
         except asyncio.CancelledError:
