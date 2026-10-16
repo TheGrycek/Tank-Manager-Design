@@ -1,6 +1,6 @@
 import asyncio
 
-from machine import Pin, SoftI2C, disable_irq, enable_irq
+from machine import ADC, Pin, SoftI2C, disable_irq, enable_irq
 
 from sh1106 import SH1106_I2C
 
@@ -80,6 +80,9 @@ class Valve:
     def __init__(self):
         self._OPEN_PIN = Pin(13, Pin.OUT)
         self._CLOSE_PIN = Pin(27, Pin.OUT)
+        # Motor current: 1 ohm shunt (R17) in the valve return, RC filtered to GPIO33, so 1 mV = 1 mA
+        self._current_adc = ADC(Pin(33))
+        self._current_adc.atten(ADC.ATTN_11DB)
 
         self._STATE = 0 # 0-closed, 1-open, 2-closing, 3-opening
         self._move_task = None
@@ -99,6 +102,18 @@ class Valve:
         # What the app shows: 1 when open or opening, 0 when closed or closing
         return 1 if self._STATE in (1, 3) else 0
 
+    def current_ma(self):
+        """Valve motor current in mA"""
+        return self._current_adc.read_uv() // 1000
+
+    async def _move_wait(self):
+        # The current is only logged for now: the motor's running current and the drop when its
+        # limit switch opens still have to be measured before the firmware can act on them
+        for second in range(self.MOVE_TIME_SEC):
+            await asyncio.sleep(1)
+            if second % 5 == 0:
+                print(f"Valve current: {self.current_ma()} mA")
+
     async def _set_state(self, state, ble):
         self._STATE = state
         # The app shows the movement (closing / opening) as well
@@ -113,13 +128,13 @@ class Valve:
                 self._OPEN_PIN.value(1)
                 print("Valve OPENING")
                 await self._set_state(3, ble)
-                await asyncio.sleep(self.MOVE_TIME_SEC)
+                await self._move_wait()
                 await self._set_state(1, ble)
             else:
                 self._CLOSE_PIN.value(1)
                 print("Valve CLOSING")
                 await self._set_state(2, ble)
-                await asyncio.sleep(self.MOVE_TIME_SEC)
+                await self._move_wait()
                 await self._set_state(0, ble)
 
         except asyncio.CancelledError:

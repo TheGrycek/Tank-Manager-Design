@@ -24,24 +24,88 @@ characteristics and the calibration procedure are described in [`esp32/README.md
 
 ### `PCB-design/`
 
-KiCad project of the main board (`PCB-design.kicad_sch`, `PCB-design.kicad_pcb`). It carries:
+KiCad project of the main board (`PCB-design.kicad_sch` on an A3 sheet split into functional
+blocks, `PCB-design.kicad_pcb`). It carries:
 
-- the ESP32 DevKitC module,
-- the 12 V input with an on/off switch, fuses and protection diodes, and a Pololu D24V10F3
-  step-down regulator,
-- power MOSFETs and PC817 optocouplers for the valve and heater outputs,
-- the buzzer,
-- the resistor dividers and connectors for the level and temperature sensors,
-- a 9-pin connector to the front panel.
+- the ESP32 DevKitC module, powered with 5 V into its VIN pin (its own regulator makes the 3.3 V),
+- the 12 V input with reverse polarity protection (P-MOSFET Q5), an on/off switch, time-lag fuses
+  (F1 300 mA logic, F2 3.15 A heater, F3 1 A valve) and a transient suppressor, and a Pololu
+  D24V10F5 5 V step-down regulator mounted upside down (header soldered from the other side,
+  footprint `Pololu_D24V10F5_Rev`),
+- power MOSFETs with 15 V gate clamps and PC817 optocouplers for the valve and heater outputs,
+- the buzzer with a 2N7000 transistor,
+- the resistor dividers, RC filters (4.7 kΩ + 100 nF) and screw terminals for the level sensors
+  (5 mm) and the temperature sensor (smaller 3.5 mm terminal, J3),
+- a 1 Ω shunt in the valve return for measuring the motor current (GPIO33),
+- a 9-pin JST XH (2.54 mm clone) connector to the front panel (J7).
+
+The board is 116 x 99.5 mm. It is made by hand (no plated holes): a pad has copper only on the
+layers its tracks use, through-hole connections are wires soldered on both sides, and tracks reach
+the component side only at parts that are easy to solder from the top. KiCad's footprint-library
+comparison is switched off in the design rules, because the pads differ from the library on
+purpose. The heating foil was measured at 1.8 A at 12.8 V (about 7.1 Ω,
+2.0 A at 14.4 V); F2 is sized for that.
 
 `Custom_components.pretty/` holds the footprints drawn for this project (ESP32 DevKitC,
-MPU-9250, SH1106 OLED, Pololu D24V10F3); the front panel project uses them too.
+MPU-9250, SH1106 OLED, Pololu D24V10F3 and the upside-down D24V10F5); the front panel project uses them too.
 
 ### `PCB-front/`
 
 KiCad project of the front panel board (`PCB-front.kicad_sch`, `PCB-front.kicad_pcb`): the
-1.3" SH1106 OLED display, the EC12 rotary encoder, the MPU-9250 module and the 9-pin connector
-to the main board.
+1.3" SH1106 OLED display, the EC12 rotary encoder, the MPU-9250 module, the 9-pin JST XH
+connector to the main board (J1; a 9-wire cable with XH plugs at both ends, pins 1:1) and 10 µF + 100 nF decoupling on the 3.3 V supply.
+
+### 3D models and the enclosure
+
+`PCB-design/3d_models/` holds the models of the parts that have none in the KiCad library: the ESP32
+DevKit (DOIT, 30 pins), the 1.3" I2C OLED module, the EC12E encoder (shaft 20 mm above the board),
+the MPU-9250 module and the switch wires. They are simplified models drawn from the footprints and
+from the modules' dimension drawings (the OLED from the LCDWiki MC130VX drawing), as STEP files that
+FreeCAD opens for editing. The Pololu regulator uses Pololu's own STEP (from pololu.com, product
+2831), turned upside down to match the `Pololu_D24V10F5_Rev` footprint. Check the dimensions against the parts you have.
+
+`mechanical/` has both boards exported with all parts as STEP (`kicad-cli pcb export step`), for
+designing the enclosure in FreeCAD. Heights above the board surface: encoder shaft 20.0 mm and OLED
+glass 5.2 mm (front panel), Q5 18.8 mm, R17 15.6 mm and the screw terminals 13.8 mm (main board).
+Re-export them after changing a board.
+
+### `enclosure/`
+
+3D-printed enclosure: one body with a removable back cover, mounted from behind the plywood
+(about 10 mm).
+
+- **Body** (`body.stl`): box 123 x 106.5 mm behind the plywood with a centred nose 72.8 x 66.8 mm on
+  its front. The nose goes through a **73.8 x 67.8 mm** hole in the plywood and stands 2 mm proud of
+  its front face; the front wall of the box rests on the back of the plywood. The nose holds the front
+  board (M3 self-tapping screws into 7 mm standoffs), the display window (bevelled), the encoder shaft
+  hole and the cut-out for the main switch.
+- **Mounting:** four M3 x 20 screws from the front through 3.5 mm holes in the plywood (at
+  x = +-55.5 mm, y = +-47.25 mm from the centre of the hole) into the corners of the front wall of the
+  box, with M3 nuts in hexagonal pockets at the back ends of the corner bosses (reached through the
+  open back; the screw pulls the nut into its pocket).
+- **Back cover** (`back_cover.stl`): the main board is screwed to it (4 x M3 x 10 through 5 mm
+  standoffs, nuts in pockets on the outside of the cover), and it is held by 4 x M3 x 10 screws in
+  ears at the back corners of the body; their nuts slide into slots in the outer side of the ears. A
+  drop of glue keeps the nuts from falling out while the cover is off.
+- The openings for the wires of the screw terminals and for the ESP32 USB socket are slots in the side
+  walls, open towards the back edge; fingers on the cover close them behind the wires. The cover comes
+  off together with the main board without unscrewing any wire. Give the JST XH cable to the front
+  board 15-20 cm, so the cover can be laid aside with the cable connected.
+- Total depth 56 mm: 2 mm in front of the plywood, 44 mm behind it. The depth is set by the main switch
+  (~30 mm deep) over the fuse holder F1 of the main board.
+
+Parts: main switch KCD1 type (snap-in rocker, cut-out 19.2 x 12.9 mm, the panel is 2 mm thick around
+it), 12 M3 nuts, 4 M3 x 20 screws for the plywood, 8 M3 x 10 screws (main board and cover), 4 M3 x 6
+self-tapping screws for the front board.
+
+Print the body nose down (the front wall of the box and the cones under the ears need supports); print
+the cover flat, standoffs up. Mounting: screw the front board into the nose and fit the switch, fix the
+body to the plywood, wire the screw terminals on the main board (their screws face the open side of
+the cover), connect the JST XH cable and the switch wires, then screw the cover on. Trim the leads of
+Q5 (vertical TO-220) to ~3 mm, it stands over the cover.
+
+`body.step` and `back_cover.step` are the parts for editing in a CAD program, the STL files are ready
+for printing; `enclosure.FCStd` opens both parts with the boards in place in FreeCAD.
 
 ### `temp_sensor/`
 

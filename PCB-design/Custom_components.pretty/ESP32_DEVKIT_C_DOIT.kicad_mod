@@ -296,4 +296,15 @@
 	)
 	(attr through_hole)
 	(embedded_fonts no)
+	(model "${KIPRJMOD}/../PCB-design/3d_models/ESP32_DEVKIT_C_DOIT.step"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
 )
