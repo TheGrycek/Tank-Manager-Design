@@ -31,7 +31,7 @@ Files created on the device: `settings.json` (user settings), `mpu_calibration.j
 | Gray tank temperature sensor | `TemperatureSensor` | ADC 32 | NTC 10k, 10 kΩ divider to 3.3 V |
 | MPU9250 (accelerometer, magnetometer) | `MPU` | I2C: SCL 22, SDA 21 | Pitch, roll and yaw of the device |
 | OLED 128x64, SH1106 | `OLED` | I2C: SCL 18, SDA 19 | Address 0x3C |
-| Electric valve | `Valve` | open 13, close 27, current ADC 33 | Moves for 35 s, closes by itself 10 min after opening and after every start-up; the motor current (1 Ω shunt, 1 mV = 1 mA) is logged while moving |
+| Electric valve | `Valve` | open 13, close 27, current ADC 33 | Moves for 35 s, closes by itself 10 min after opening and after every start-up; the motor current (10 Ω shunt, 10 mV = 1 mA) is logged while moving |
 | Heater | `Heater` | 25 | On at the heating threshold, off 1 °C above it |
 | Buzzer | `Buzzer` | 26 | Gray tank overfill alarm, a double beep every second; in the clean tank fill mode beeps that come faster as the tank fills (silent up to 5 %, continuous from 95 %) |
 | EC12 rotary encoder with button | `Encoder` | A 17, B 23, SW 5 | Internal pull-ups, active low |

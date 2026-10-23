@@ -80,7 +80,8 @@ class Valve:
     def __init__(self):
         self._OPEN_PIN = Pin(13, Pin.OUT)
         self._CLOSE_PIN = Pin(27, Pin.OUT)
-        # Motor current: 1 ohm shunt (R17) in the valve return, RC filtered to GPIO33, so 1 mV = 1 mA
+        # Motor current: 10 ohm shunt (R17) in the valve return, RC filtered to GPIO33, so 10 mV = 1 mA
+        # (the motor was measured at about 30 mA while moving)
         self._current_adc = ADC(Pin(33))
         self._current_adc.atten(ADC.ATTN_11DB)
 
@@ -104,7 +105,7 @@ class Valve:
 
     def current_ma(self):
         """Valve motor current in mA"""
-        return self._current_adc.read_uv() // 1000
+        return self._current_adc.read_uv() // 10000
 
     async def _move_wait(self):
         # The current is only logged for now: the motor's running current and the drop when its
