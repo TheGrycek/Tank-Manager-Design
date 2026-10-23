@@ -47,7 +47,11 @@ is still left below it.
 
 The display normally shows the tank levels, the temperature and the valve state. Pressing the
 encoder opens the menu; turning selects an item and pressing changes it. The menu closes after
-15 s without input.
+15 s without input. The display switches off after 60 s without input to save power; the first
+touch of the encoder only switches it on again. The pairing code, the MPU calibration and the open
+menu keep it on.
+
+The CPU runs at 80 MHz instead of the default 160 MHz, which also saves power.
 
 | Item | Action |
 | --- | --- |

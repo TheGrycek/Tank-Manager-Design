@@ -15,6 +15,8 @@ class OLED:
         self._OLED_ADDR = 0x3C
         self.i2c = None
         self.oled = None
+        # False while the display is switched off to save power (ui_task)
+        self.on = True
         self.valve_states = {
             0: "closed",
             1: "open",
@@ -35,6 +37,18 @@ class OLED:
             print("Error: OLED not found")
             self.oled = None
             return None
+
+    def set_on(self, on):
+        """Switches the display panel on or off; the picture is kept"""
+        self.on = on
+        if not self.oled: return
+        try:
+            if on:
+                self.oled.poweron()
+            else:
+                self.oled.poweroff()
+        except OSError:
+            print("Error: OLED not responding")
 
     def print_tank_info(self, level_gray, level_clean, valve_state, temperature):
         if not self.oled: return

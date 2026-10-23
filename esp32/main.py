@@ -2,10 +2,13 @@ import asyncio
 import struct
 import time
 
-from machine import WDT, reset
+from machine import WDT, freq, reset
 
 import aioble
 import aioble.core
+
+# 80 MHz instead of the default 160 MHz: enough for everything here and about 10-20 mA less
+freq(80_000_000)
 
 # Start Bluetooth (loading the stored bonds) before the larger modules are compiled: compiling
 # them grows the Python heap into the memory the Bluetooth controller needs, and its init then fails
@@ -21,6 +24,9 @@ from history import History
 # Once started it cannot be stopped (not even by Ctrl-C or a soft reset), so keep it at 0 while
 # developing over the REPL and set it (e.g. 8000) for the installed device.
 WATCHDOG_MS = 0
+
+# The display switches off after this long without encoder input (it draws 10-25 mA when on)
+SCREEN_TIMEOUT_MS = 60000
 
 mpu = MPU()
 oled = OLED()
@@ -153,10 +159,31 @@ async def ui_task():
     encoder.configure()
     last_draw = None
     last_refresh = time.ticks_ms()
+    last_input = last_refresh
     while True:
         try:
-            redraw = await menu.handle(encoder.take_steps(), encoder.poll_button())
+            steps = encoder.take_steps()
+            pressed = encoder.poll_button()
             now = time.ticks_ms()
+            if steps or pressed:
+                last_input = now
+                if not oled.on:
+                    # The first touch only wakes the display, so nothing changes unseen
+                    steps, pressed = 0, False
+                    oled.set_on(True)
+                    last_draw = None
+            redraw = await menu.handle(steps, pressed)
+            # The pairing code, the calibration and the open menu keep the display on
+            if ble.passkey is not None or menu.state != Menu.IDLE:
+                last_input = now
+                if not oled.on:
+                    oled.set_on(True)
+                    last_draw = None
+            if oled.on and time.ticks_diff(now, last_input) > SCREEN_TIMEOUT_MS:
+                oled.set_on(False)
+            if not oled.on:
+                await asyncio.sleep_ms(50)
+                continue
             # Values on screen (levels, valve state) also change on their own
             if time.ticks_diff(now, last_refresh) >= 500:
                 redraw = True
