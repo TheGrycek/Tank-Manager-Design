@@ -173,8 +173,8 @@ async def ui_task():
                     oled.set_on(True)
                     last_draw = None
             redraw = await menu.handle(steps, pressed)
-            # The pairing code, the calibration and the open menu keep the display on
-            if ble.passkey is not None or menu.state != Menu.IDLE:
+            # The pairing code, the calibration, the open menu and a valve error keep the display on
+            if ble.passkey is not None or menu.state != Menu.IDLE or valve.get_state() == Valve.ERROR:
                 last_input = now
                 if not oled.on:
                     oled.set_on(True)
@@ -196,7 +196,10 @@ async def ui_task():
                 elif menu.state != Menu.IDLE:
                     draw = ("menu",) + menu.screen()
                 else:
-                    draw = ("tank", readings["gray"], readings["clean"], valve.get_state(), readings["temp"])
+                    # A valve error blinks: the phase changes with every refresh
+                    blink = valve.get_state() == Valve.ERROR and time.ticks_ms() // 500 % 2 == 0
+                    draw = ("tank", readings["gray"], readings["clean"], valve.get_state(), readings["temp"],
+                            valve.error, blink)
                 if draw != last_draw:
                     last_draw = draw
                     if draw[0] == "passkey":

@@ -31,7 +31,7 @@ Files created on the device: `settings.json` (user settings), `mpu_calibration.j
 | Gray tank temperature sensor | `TemperatureSensor` | ADC 32 | NTC 10k, 10 kΩ divider to 3.3 V |
 | MPU9250 (accelerometer, magnetometer) | `MPU` | I2C: SCL 22, SDA 21 | Pitch, roll and yaw of the device |
 | OLED 128x64, SH1106 | `OLED` | I2C: SCL 18, SDA 19 | Address 0x3C |
-| Electric valve | `Valve` | open 13, close 27, current ADC 33 | Moves for 35 s, closes by itself 10 min after opening and after every start-up; the motor current (10 Ω shunt, 10 mV = 1 mA) is logged while moving |
+| Electric valve | `Valve` | open 13, close 27, current ADC 33 | The motor runs until its limit switch cuts the current (10 Ω shunt, 10 mV = 1 mA; about 22 s at 15-45 mA, measured without water pressure); closes by itself 10 min after opening and after every start-up. A move without current within 1 s, or still running after 40 s, stops the motor and sets the error state (see below) |
 | Heater | `Heater` | 25 | On at the heating threshold, off 1 °C above it |
 | Buzzer | `Buzzer` | 26 | Gray tank overfill alarm, a double beep every second; in the clean tank fill mode beeps that come faster as the tank fills (silent up to 5 %, continuous from 95 %) |
 | EC12 rotary encoder with button | `Encoder` | A 17, B 23, SW 5 | Internal pull-ups, active low |
@@ -51,11 +51,21 @@ encoder opens the menu; turning selects an item and pressing changes it. The men
 touch of the encoder only switches it on again. The pairing code, the MPU calibration and the open
 menu keep it on.
 
+### Valve error
+
+If the valve motor draws no current within 1 s of a command (a loose wire, fuse F3, a MOSFET) or
+still runs after 40 s (the valve is stuck or its limit switch is broken), the firmware stops the
+motor and sets the valve state to error (4). The display keeps on and blinks `VALVE ERROR`
+alternating with the cause (`NO CURRENT` or `TIMEOUT`), the buzzer beeps three times every 2 s (if
+the buzzer is on in the settings) and the app shows a blinking ERROR. The next open or close command,
+from the app or the menu, is a new attempt; a failed opening is still closed by the auto-close after
+10 min. After a start-up no current means that the valve is already closed, so it is no error then.
+
 The CPU runs at 80 MHz instead of the default 160 MHz, which also saves power.
 
 | Item | Action |
 | --- | --- |
-| `BUZZER` | Overfill alarm on / off |
+| `BUZZER` | Alarms on / off (gray tank overfill, valve error) |
 | `GRAY LVL THR` | Gray tank level that triggers the alarm, 50-100 % |
 | `AUTO-HEATING` | Heater control on / off |
 | `HEATING THR` | Temperature below which the heater turns on, 1-5 °C |
@@ -83,7 +93,7 @@ then crashes at start-up (`BLE_INIT: hci inits failed`).
 | Gray tank temperature | `...0003` | `int16`, 0.01 °C, -32768 = sensor fault | read, notify |
 | MPU | `...0004` | 3 x `float32`: pitch (> 0 front up), roll (> 0 right side down), heading of the front (0-360, clockwise from magnetic north), degrees | read, notify |
 | Valve | `...0005` | `uint8`, 1 = open, 0 = closed | read, write, notify, indicate |
-| Valve state | `...0006` | `uint8`, 0 = closed, 1 = open, 2 = closing, 3 = opening | read, notify, indicate |
+| Valve state | `...0006` | `uint8`, 0 = closed, 1 = open, 2 = closing, 3 = opening, 4 = error | read, notify, indicate |
 | Heater | `...0007` | `uint8`, 1 = on | read, notify, indicate |
 | Settings | `...0008` | 5 x `uint8`: buzzer, gray level threshold, auto-heating, heating threshold, fill mode (the app may write only the first 4) | read, write, notify |
 | History | `...0009` | written: `<I` first sample wanted, `<I` Unix time; notified: `<I` first sample, `uint8` count, count x (`<I` time, `uint8` gray (bit 7: driving), `uint8` clean (bit 7: tilted), `<h` temperature x 100), a packet with count 0 ends a transfer | write, notify |

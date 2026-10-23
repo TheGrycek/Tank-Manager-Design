@@ -142,6 +142,8 @@ class Menu:
             return "CALIBRATED" if self._mpu.calibrated else "NOT CALIBRATED"
         if self.item == self.LEVEL:
             return "SET ZERO"
+        if self._valve.get_state() == self._valve.ERROR:
+            return "ERROR"
         return "OPEN" if self._valve.get_target() else "CLOSED"
 
     def screen(self):
@@ -457,7 +459,7 @@ class Bluetooth:
         # Cheap periodic re-send (no acknowledgement) so that an app which subscribed late,
         # e.g. after a reconnect, still gets the current state
         await self.write_characteristic("VALVE", self._valve.get_target(), '<B', indicate=False)
-        # Actual state, including the movement: 0 closed, 1 open, 2 closing, 3 opening
+        # Actual state, including the movement: 0 closed, 1 open, 2 closing, 3 opening, 4 error
         await self.write_characteristic("VALVE_STATE", self._valve.get_state(), '<B', indicate=False)
         await self.write_characteristic("HEATER", self._heater.get_state(), '<B', indicate=False)
         await self.send_settings()

@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from machine import ADC, Pin, SoftI2C, disable_irq, enable_irq
 
@@ -23,11 +24,17 @@ class OLED:
             2: "closing",
             3: "opening"
         }
+        self.valve_errors = {
+            Valve.ERROR_NO_CURRENT: "NO CURRENT",
+            Valve.ERROR_TIMEOUT: "TIMEOUT"
+        }
 
     def configure(self):
         try:
             self.i2c = SoftI2C(scl=self._OLED_I2C_SCL_PIN, sda=self._OLED_I2C_SDA_PIN)
-            self.oled = SH1106_I2C(self._OLED_WIDTH, self._OLED_HEIGHT, self.i2c, addr=self._OLED_ADDR)
+            # Rotated by 180 degrees: the display is mounted upside down on the front panel
+            self.oled = SH1106_I2C(self._OLED_WIDTH, self._OLED_HEIGHT, self.i2c, addr=self._OLED_ADDR,
+                                   rotate=180)
             self.oled.contrast(255)
             self.oled.fill(0)
             self.oled.text("System Ready", 0, 0)
@@ -50,13 +57,20 @@ class OLED:
         except OSError:
             print("Error: OLED not responding")
 
-    def print_tank_info(self, level_gray, level_clean, valve_state, temperature):
+    def print_tank_info(self, level_gray, level_clean, valve_state, temperature, valve_error, blink):
         if not self.oled: return
         temp = "T ERR" if temperature is None else f"{temperature:.1f}C"
         self.oled.fill(0)
         self.oled.text(f"|GRAY TANK>", 0, 0)
         self.oled.text(f" lvl:{level_gray:3d}% {temp}", 0, 15)
-        self.oled.text(f" valve: {self.valve_states[valve_state]}", 0, 25)
+        if valve_state != Valve.ERROR:
+            self.oled.text(f" valve: {self.valve_states[valve_state]}", 0, 25)
+        elif blink:
+            # Inverted bar, alternating with the cause
+            self.oled.fill_rect(0, 24, self._OLED_WIDTH, 10, 1)
+            self.oled.text(" VALVE ERROR", 0, 25, 0)
+        else:
+            self.oled.text(f" {self.valve_errors.get(valve_error, '')}", 0, 25)
         self.oled.text(f"|CLEAN TANK>", 0, 40)
         self.oled.text(f" lvl:{level_clean:3d}%", 0, 55)
         self.oled.show()
@@ -87,8 +101,20 @@ class OLED:
         self.oled.show()
 
 class Valve:
-    """Electric valve regulation"""
-    MOVE_TIME_SEC = 35  # valve movement time (about 30 s, its limit switch cuts the motor)
+    """Electric valve regulation. The motor runs until its limit switch cuts the current; the time
+    limit is only a safeguard. A move without any current, or one that does not end in time, stops
+    the motor and leaves the valve in the ERROR state until the next command."""
+    ERROR = 4  # state after a failed move
+    ERROR_NO_CURRENT = 1  # the motor drew no current: wire, fuse F3 or MOSFET
+    ERROR_TIMEOUT = 2  # the motor still ran after MAX_MOVE_MS: valve stuck or limit switch broken
+    # Measured without water pressure: about 22 s per move at 15-45 mA (up to 100 mA at the start);
+    # under pressure the motor is slower
+    MAX_MOVE_MS = 40000
+    _START_MS = 1000  # the current must appear within this
+    _STOP_MS = 500  # the move has ended after this long without current
+    _POLL_MS = 20
+    # The ADC reads 142 mV at 0 V (the bottom of its range); the motor gives 150-450 mV on the shunt
+    _CURRENT_MIN_UV = 160000
     AUTO_CLOSE_SEC = 600  # auto-close time
 
     def __init__(self):
@@ -99,7 +125,9 @@ class Valve:
         self._current_adc = ADC(Pin(33))
         self._current_adc.atten(ADC.ATTN_11DB)
 
-        self._STATE = 0 # 0-closed, 1-open, 2-closing, 3-opening
+        self._STATE = 0 # 0-closed, 1-open, 2-closing, 3-opening, 4-error
+        self._target = 0  # last commanded position, 1 = open
+        self.error = None  # ERROR_* while the state is ERROR
         self._move_task = None
         self._auto_close_task = None
 
@@ -114,43 +142,69 @@ class Valve:
         return self._STATE
 
     def get_target(self):
-        # What the app shows: 1 when open or opening, 0 when closed or closing
-        return 1 if self._STATE in (1, 3) else 0
+        # What the app shows: 1 when open or opening (or failed while opening), 0 otherwise
+        return self._target
 
     def current_ma(self):
         """Valve motor current in mA"""
-        return self._current_adc.read_uv() // 10000
+        uv = self._current_adc.read_uv()
+        return 0 if uv < self._CURRENT_MIN_UV else uv // 10000
 
     async def _move_wait(self):
-        # The current is only logged for now: the motor's running current and the drop when its
-        # limit switch opens still have to be measured before the firmware can act on them
-        for second in range(self.MOVE_TIME_SEC):
-            await asyncio.sleep(1)
-            if second % 5 == 0:
-                print(f"Valve current: {self.current_ma()} mA")
+        """Waits until the limit switch cuts the motor; returns None or an ERROR_* value"""
+        start = time.ticks_ms()
+        last_current = None
+        peak = 0
+        while True:
+            await asyncio.sleep_ms(self._POLL_MS)
+            now = time.ticks_ms()
+            elapsed = time.ticks_diff(now, start)
+            current = self.current_ma()
+            if current:
+                last_current = now
+                peak = max(peak, current)
+            if last_current is None:
+                if elapsed >= self._START_MS:
+                    return self.ERROR_NO_CURRENT
+            elif time.ticks_diff(now, last_current) >= self._STOP_MS:
+                # Short drops to zero while the motor runs last one sample at most
+                print(f"Valve moved in {time.ticks_diff(last_current, start) / 1000:.1f} s, peak {peak} mA")
+                return None
+            if elapsed >= self.MAX_MOVE_MS:
+                return self.ERROR_TIMEOUT
 
     async def _set_state(self, state, ble):
         self._STATE = state
         # The app shows the movement (closing / opening) as well
         await ble.write_characteristic("VALVE_STATE", state, '<B')
 
-    async def _run_valve(self, state, ble):
+    async def _run_valve(self, state, ble, start_up):
         try:
             # Ensure both pins are off first
             self.stop()
 
+            self.error = None
             if state == 1:
                 self._OPEN_PIN.value(1)
                 print("Valve OPENING")
                 await self._set_state(3, ble)
-                await self._move_wait()
-                await self._set_state(1, ble)
             else:
                 self._CLOSE_PIN.value(1)
                 print("Valve CLOSING")
                 await self._set_state(2, ble)
-                await self._move_wait()
-                await self._set_state(0, ble)
+            error = await self._move_wait()
+            self.stop()
+            if error == self.ERROR_NO_CURRENT and start_up:
+                # After a start-up the valve is usually closed already, so its limit switch is open
+                print("Valve already closed (no motor current)")
+                error = None
+            if error is None:
+                await self._set_state(state, ble)
+            else:
+                print("Valve ERROR:", "no motor current" if error == self.ERROR_NO_CURRENT
+                      else f"motor still running after {self.MAX_MOVE_MS // 1000} s")
+                self.error = error
+                await self._set_state(self.ERROR, ble)
 
         except asyncio.CancelledError:
             print("Valve movement cancelled")
@@ -169,12 +223,13 @@ class Valve:
 
         # This task is done waiting: forget it, so starting the movement does not cancel itself
         self._auto_close_task = None
-        if self._STATE in (1, 3):
+        # Also after a failed opening: the valve may be partly open
+        if self._target == 1:
             print("Auto-closing valve after timeout")
             await self._start_valve_task(0, ble)
             await ble.write_characteristic("VALVE", 0, '<B')
 
-    async def _start_valve_task(self, state, ble):
+    async def _start_valve_task(self, state, ble, start_up=False):
         # Cancel active movement
         if self._move_task is not None:
             self._move_task.cancel()
@@ -189,7 +244,8 @@ class Valve:
             self._auto_close_task = None
 
         # Start valve movement
-        self._move_task = asyncio.create_task(self._run_valve(state, ble))
+        self._target = state
+        self._move_task = asyncio.create_task(self._run_valve(state, ble, start_up))
 
         # If opening, schedule auto-close
         if state == 1:
@@ -197,14 +253,15 @@ class Valve:
 
     async def close_on_start(self, ble):
         """After a reset the real position is unknown (the valve may have been left open): drive it
-        closed, the limit switch stops the motor if it already is"""
+        closed; if it already is, its limit switch is open and no current flows"""
         print("Closing the valve after start-up")
-        await self._start_valve_task(0, ble)
+        await self._start_valve_task(0, ble, start_up=True)
 
     async def request(self, state, ble):
         """Open (1) or close (0) the valve; used by the app command and by the panel menu"""
         s = self.get_state()
-        if (state == 0 and s in (1, 3)) or (state == 1 and s in (0, 2)):
+        # After an error either command is a new attempt
+        if (state == 0 and s in (1, 3)) or (state == 1 and s in (0, 2)) or s == self.ERROR:
             print(f"Valve movement requested: {state}")
             await self._start_valve_task(state, ble)
 
@@ -304,11 +361,13 @@ class Heater:
 
 
 class Buzzer:
-    """Gray tank overfill alarm (a double beep every second) and the clean tank fill mode (beeps that
-    come faster as the tank fills: silent when empty, a continuous tone when full)"""
+    """Valve error alarm (three beeps every 2 s), gray tank overfill alarm (a double beep every second)
+    and the clean tank fill mode (beeps that come faster as the tank fills: silent when empty, a
+    continuous tone when full)"""
     _BEEP_MS = 100
     _GAP_MS = 100
     _PERIOD_MS = 1000
+    _VALVE_PAUSE_MS = 1500
     # Fill mode: silent up to FILL_EMPTY %, continuous from FILL_FULL %, in between a short beep with
     # a pause shrinking linearly from FILL_PAUSE_MAX_MS to FILL_PAUSE_MIN_MS
     FILL_EMPTY = 5
@@ -319,6 +378,7 @@ class Buzzer:
 
     def __init__(self):
         self._BUZZER_PIN = Pin(26, Pin.OUT)
+        self._valve_alarm = False
         self._alarm = False
         self._fill_mode = False
         self._clean_lvl = 0
@@ -327,6 +387,7 @@ class Buzzer:
         self.off()
 
     def off(self):
+        self._valve_alarm = False
         self._alarm = False
         self._fill_mode = False
         self._BUZZER_PIN.value(0)
@@ -334,6 +395,8 @@ class Buzzer:
     def control(self, valve_state, gray_lvl, clean_lvl, settings):
         # Sound while the gray tank is above the threshold and the valve is still closed
         self._alarm = settings.buzzer_on and valve_state == 0 and gray_lvl > settings.gray_lvl_threshold
+        # A failed valve move: three beeps every 2 s, before everything else
+        self._valve_alarm = settings.buzzer_on and valve_state == Valve.ERROR
         self._fill_mode = settings.fill_mode
         self._clean_lvl = clean_lvl
 
@@ -352,6 +415,13 @@ class Buzzer:
         pause_ms = self._PERIOD_MS - 2 * self._BEEP_MS - self._GAP_MS
         try:
             while True:
+                if self._valve_alarm:
+                    for gap_ms in (self._GAP_MS, self._GAP_MS, self._VALVE_PAUSE_MS):
+                        self._BUZZER_PIN.value(1)
+                        await asyncio.sleep_ms(self._BEEP_MS)
+                        self._BUZZER_PIN.value(0)
+                        await asyncio.sleep_ms(gap_ms)
+                    continue
                 if self._fill_mode:
                     fill_pause = self.fill_pause_ms(self._clean_lvl)
                     if fill_pause is None or fill_pause == 0:
