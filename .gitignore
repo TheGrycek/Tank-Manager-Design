@@ -205,3 +205,25 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+PCB-design/PCB-design-backups
+PCB-front/PCB-front-backups
+PCB-design/renders
+PCB-front/renders
+.idea
+
+# KiCad: local caches, per-user view settings, lock and autosave files
+fp-info-cache
+*.kicad_prl
+*.lck
+_autosave-*
+\#auto_saved_files\#
+
+# Local generator scripts and their inputs/outputs (the generated models and parts are committed)
+PCB-design/3d_models/make_models.py
+PCB-design/3d_models/vendor/
+enclosure/enclosure.py
+enclosure/board_parts.json
+enclosure/assembly.step
+components_info/
+fabrication/
