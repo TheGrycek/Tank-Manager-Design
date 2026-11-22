@@ -5,7 +5,12 @@ levels, the gray water temperature and the tilt of the device, drives the gray w
 a tank heater and an overfill buzzer, and is operated from a front panel (OLED display and rotary
 encoder) or from a phone app over Bluetooth LE.
 
-This repository holds the hardware design and the firmware.
+This repository holds the hardware design and the firmware. The compatible Android app is in
+[TheGrycek/Tank-Manager-App](https://github.com/TheGrycek/Tank-Manager-App).
+
+<p align="center">
+  <img src="images/cover_3D.png" alt="3D model of the enclosure with the front panel" width="420">
+</p>
 
 ## Folders
 
@@ -15,17 +20,25 @@ This repository holds the hardware design and the firmware.
 | [`PCB-design/`](PCB-design/) | KiCad project of the main board |
 | [`PCB-front/`](PCB-front/) | KiCad project of the front panel board |
 | [`temp_sensor/`](temp_sensor/) | Characterisation of the NTC temperature sensor |
+| [`images/`](images/) | Renders of the boards and the enclosure used in this README |
 
 ### `esp32/`
 
 The firmware: sensor readout, valve, heater and buzzer control, the display menu, Bluetooth LE
 communication with the app and the MPU calibration. The components, pins, Bluetooth
 characteristics and the calibration procedure are described in [`esp32/README.md`](esp32/README.md).
+The phone side is the Android app [Tank-Manager-App](https://github.com/TheGrycek/Tank-Manager-App).
 
 ### `PCB-design/`
 
 KiCad project of the main board (`PCB-design.kicad_sch` on an A3 sheet split into functional
-blocks, `PCB-design.kicad_pcb`). It carries:
+blocks, `PCB-design.kicad_pcb`).
+
+<p align="center">
+  <img src="images/pcb_3D_main.png" alt="3D render of the main board" width="560">
+</p>
+
+It carries:
 
 - the ESP32 DevKitC module, powered with 5 V into its VIN pin (its own regulator makes the 3.3 V),
 - the 12 V input with reverse polarity protection (P-MOSFET Q5), an on/off switch, time-lag fuses
@@ -57,6 +70,10 @@ MPU-9250, SH1106 OLED, Pololu D24V10F3 and the upside-down D24V10F5); the front 
 KiCad project of the front panel board (`PCB-front.kicad_sch`, `PCB-front.kicad_pcb`): the
 1.3" SH1106 OLED display, the EC12 rotary encoder, the MPU-9250 module, the 9-pin JST XH
 connector to the main board (J1; a 9-wire cable with XH plugs at both ends, pins 1:1) and 10 µF + 100 nF decoupling on the 3.3 V supply.
+
+<p align="center">
+  <img src="images/pcb_3D_front.png" alt="3D render of the front panel board" width="340">
+</p>
 
 ### 3D models and the enclosure
 
